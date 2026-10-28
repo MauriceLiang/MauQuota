@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+.swiftpm/
+dist/
+*.dmg
+
+# Local-only build/install tooling, not published
+/scripts/
+/*.command
+/RELEASING.md
