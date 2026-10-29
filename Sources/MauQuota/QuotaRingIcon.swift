@@ -4,6 +4,13 @@ import MauQuotaCore
 /// 双环菜单栏标识：外圈为每周额度，内圈为 5 小时额度，颜色表示剩余比例。
 /// 在 18～22pt 的菜单栏里不绘制中心代码括号，确保两圈清楚可辨。
 enum QuotaRingIcon {
+    static func color(for remaining: Int) -> NSColor {
+        if remaining == 0 { return NSColor.systemRed.withAlphaComponent(0.65) }
+        if remaining <= 20 { return .systemRed }
+        if remaining <= 50 { return .systemOrange }
+        return .systemGreen
+    }
+
     static func render(_ state: QuotaRingState) -> NSImage {
         let size = NSSize(width: 21, height: 21)
         let image = NSImage(size: size, flipped: false) { _ in
@@ -20,21 +27,13 @@ enum QuotaRingIcon {
 
     private static func drawRing(center: NSPoint, radius: CGFloat, width: CGFloat,
                                  remaining: Int?) {
-        let color: NSColor
-        if let remaining {
-            if remaining <= 20 { color = .systemRed }
-            else if remaining <= 50 { color = .systemOrange }
-            else { color = .systemGreen }
-        } else {
-            color = .labelColor
-        }
+        let color = remaining.map { Self.color(for: $0) } ?? .labelColor
 
         let track = NSBezierPath(ovalIn: NSRect(
             x: center.x - radius, y: center.y - radius,
             width: radius * 2, height: radius * 2))
         track.lineWidth = width
-        let trackColor = remaining == 0
-            ? color.withAlphaComponent(0.65) : NSColor.labelColor.withAlphaComponent(0.13)
+        let trackColor = remaining == 0 ? color : NSColor.labelColor.withAlphaComponent(0.13)
         trackColor.setStroke()
         track.stroke()
 

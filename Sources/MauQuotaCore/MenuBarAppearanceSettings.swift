@@ -4,6 +4,7 @@ import Foundation
 /// UserDefaults 会以应用的 bundle identifier 为作用域持久保存。
 public final class MenuBarAppearanceSettings {
     private static let coloredRingKey = "showColoredQuotaRing"
+    private static let coloredNumbersKey = "showColoredQuotaNumbers"
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -14,5 +15,10 @@ public final class MenuBarAppearanceSettings {
     public var showsColoredRing: Bool {
         get { defaults.object(forKey: Self.coloredRingKey) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Self.coloredRingKey) }
+    }
+
+    public var showsColoredNumbers: Bool {
+        get { defaults.object(forKey: Self.coloredNumbersKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Self.coloredNumbersKey) }
     }
 }

@@ -61,7 +61,7 @@ public enum MenuLocalization {
         case authorizeInBrowser, checkingStatus, account, loggedOutDescription
         case remaining, resetAt, notProvided, updatedAt, error
         case login, relogin, refresh, refreshing
-        case ringToggle, refreshInterval, customInterval, language
+        case ringToggle, numberColorToggle, refreshInterval, customInterval, language
         case followSystem, simplifiedChinese, english, copyDiagnostics, version, quit
         case customIntervalTitle, customIntervalMessage, save, cancel
         case invalidIntervalTitle, invalidIntervalMessage, loginFailure
@@ -91,6 +91,7 @@ public enum MenuLocalization {
         case .refresh: return chinese ? "立即刷新" : "Refresh now"
         case .refreshing: return chinese ? "正在检查…" : "Refreshing…"
         case .ringToggle: return chinese ? "显示彩色额度圆环" : "Show colored quota rings"
+        case .numberColorToggle: return chinese ? "显示彩色额度数字" : "Show colored quota numbers"
         case .refreshInterval: return chinese ? "自动刷新间隔" : "Auto-refresh interval"
         case .customInterval: return chinese ? "自定义…" : "Custom…"
         case .language: return chinese ? "语言 / Language" : "Language / 语言"

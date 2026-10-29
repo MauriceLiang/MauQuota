@@ -83,6 +83,11 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         drawMenu() // UI-only change; no quota request.
     }
 
+    @objc private func coloredNumbersToggled(_ sender: Any?) {
+        appearanceSettings.showsColoredNumbers.toggle()
+        drawMenu() // UI-only change; no quota request.
+    }
+
     @objc private func refreshIntervalSelected(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let minutes = item.representedObject as? Int else { return }
@@ -213,6 +218,25 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         else { logger.info("账号和额度已更新") }
     }
 
+    private static func coloredTitle(_ title: NSAttributedString, usage: CodexUsage) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: title)
+        let text = result.string as NSString
+        let rings = QuotaRingState(usage: usage)
+        let windows = [(usage.shortWindow, rings.fiveHourRemaining), (usage.longWindow, rings.weeklyRemaining)]
+        var position = 0
+        for (window, remaining) in windows {
+            guard let window else { continue }
+            let range = text.range(of: "\(window.remainingPercent)%", options: [],
+                                   range: NSRange(location: position, length: text.length - position))
+            guard range.location != NSNotFound else { break }
+            if let remaining {
+                result.addAttribute(.foregroundColor, value: QuotaRingIcon.color(for: remaining), range: range)
+            }
+            position = NSMaxRange(range)
+        }
+        return result
+    }
+
     private func drawMenu() {
         guard statusItem != nil else { return }
         let menu = NSMenu(title: "MauQuota")
@@ -223,7 +247,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         else if hasChecked && lastAccount == nil && lastError == nil { title = tr(.loggedOutTitle) }
         else { title = tr(.errorTitle) }
 
-        statusItem.button?.title = title
+        if let button = statusItem.button {
+            button.title = title // Reset prior colors and retain the system text style.
+            if let usage = lastUsage, appearanceSettings.showsColoredNumbers {
+                button.attributedTitle = Self.coloredTitle(button.attributedTitle, usage: usage)
+            }
+        }
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.image = appearanceSettings.showsColoredRing
             ? QuotaRingIcon.render(QuotaRingState(usage: lastUsage)) : nil
@@ -283,6 +312,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         coloredRingItem.target = self
         coloredRingItem.state = appearanceSettings.showsColoredRing ? .on : .off
         menu.addItem(coloredRingItem)
+        let coloredNumbersItem = NSMenuItem(
+            title: tr(.numberColorToggle), action: #selector(coloredNumbersToggled(_:)), keyEquivalent: ""
+        )
+        coloredNumbersItem.target = self
+        coloredNumbersItem.state = appearanceSettings.showsColoredNumbers ? .on : .off
+        menu.addItem(coloredNumbersItem)
         addRefreshIntervalMenu(to: menu)
         addLanguageMenu(to: menu)
 
