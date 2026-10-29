@@ -88,6 +88,11 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         drawMenu() // UI-only change; no quota request.
     }
 
+    @objc private func redNumberAlignmentCompensationToggled(_ sender: Any?) {
+        appearanceSettings.compensatesRedNumberAlignment.toggle()
+        drawMenu() // UI-only change; no quota request.
+    }
+
     @objc private func refreshIntervalSelected(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let minutes = item.representedObject as? Int else { return }
@@ -138,7 +143,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out / unknown" : "未登录/未知") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
         let issue = displayedError() ?? (activeLanguage == .english ? "None" : "无")
         let diagnostic = """
-        MauQuota v1.8.0
+        MauQuota v1.8.5
         Codex CLI: \(path)
         \(tr(.account))\(login)
         \(tr(.refreshInterval)): \(preferences.refreshIntervalMinutes) min
@@ -218,7 +223,8 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         else { logger.info("账号和额度已更新") }
     }
 
-    private static func coloredTitle(_ title: NSAttributedString, usage: CodexUsage) -> NSAttributedString {
+    private static func coloredTitle(_ title: NSAttributedString, usage: CodexUsage,
+                                     compensatesRedAlignment: Bool) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: title)
         let text = result.string as NSString
         let rings = QuotaRingState(usage: usage)
@@ -231,6 +237,9 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             guard range.location != NSNotFound else { break }
             if let remaining {
                 result.addAttribute(.foregroundColor, value: QuotaRingIcon.color(for: remaining), range: range)
+                if compensatesRedAlignment && remaining <= 20 {
+                    result.addAttribute(.baselineOffset, value: -0.5, range: range)
+                }
             }
             position = NSMaxRange(range)
         }
@@ -250,7 +259,10 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.title = title // Reset prior colors and retain the system text style.
             if let usage = lastUsage, appearanceSettings.showsColoredNumbers {
-                button.attributedTitle = Self.coloredTitle(button.attributedTitle, usage: usage)
+                button.attributedTitle = Self.coloredTitle(
+                    button.attributedTitle, usage: usage,
+                    compensatesRedAlignment: appearanceSettings.compensatesRedNumberAlignment
+                )
             }
         }
         statusItem.button?.imagePosition = .imageLeading
@@ -312,12 +324,24 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         coloredRingItem.target = self
         coloredRingItem.state = appearanceSettings.showsColoredRing ? .on : .off
         menu.addItem(coloredRingItem)
+        let numberColorMenu = NSMenu(title: tr(.numberColorToggle))
         let coloredNumbersItem = NSMenuItem(
-            title: tr(.numberColorToggle), action: #selector(coloredNumbersToggled(_:)), keyEquivalent: ""
+            title: tr(.numberColorEnabled), action: #selector(coloredNumbersToggled(_:)), keyEquivalent: ""
         )
         coloredNumbersItem.target = self
         coloredNumbersItem.state = appearanceSettings.showsColoredNumbers ? .on : .off
-        menu.addItem(coloredNumbersItem)
+        numberColorMenu.addItem(coloredNumbersItem)
+        let alignmentCompensationItem = NSMenuItem(
+            title: tr(.redNumberAlignmentCompensation),
+            action: #selector(redNumberAlignmentCompensationToggled(_:)), keyEquivalent: ""
+        )
+        alignmentCompensationItem.target = self
+        alignmentCompensationItem.state = appearanceSettings.compensatesRedNumberAlignment ? .on : .off
+        alignmentCompensationItem.isEnabled = appearanceSettings.showsColoredNumbers
+        numberColorMenu.addItem(alignmentCompensationItem)
+        let numberColorItem = NSMenuItem(title: tr(.numberColorToggle), action: nil, keyEquivalent: "")
+        numberColorItem.submenu = numberColorMenu
+        menu.addItem(numberColorItem)
         addRefreshIntervalMenu(to: menu)
         addLanguageMenu(to: menu)
 

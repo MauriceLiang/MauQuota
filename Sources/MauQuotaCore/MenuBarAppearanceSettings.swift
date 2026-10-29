@@ -5,6 +5,7 @@ import Foundation
 public final class MenuBarAppearanceSettings {
     private static let coloredRingKey = "showColoredQuotaRing"
     private static let coloredNumbersKey = "showColoredQuotaNumbers"
+    private static let redNumberAlignmentKey = "compensateRedQuotaNumberAlignment"
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -20,5 +21,10 @@ public final class MenuBarAppearanceSettings {
     public var showsColoredNumbers: Bool {
         get { defaults.object(forKey: Self.coloredNumbersKey) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Self.coloredNumbersKey) }
+    }
+
+    public var compensatesRedNumberAlignment: Bool {
+        get { defaults.object(forKey: Self.redNumberAlignmentKey) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Self.redNumberAlignmentKey) }
     }
 }
