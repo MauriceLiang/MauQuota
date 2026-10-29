@@ -133,7 +133,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out / unknown" : "未登录/未知") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
         let issue = displayedError() ?? (activeLanguage == .english ? "None" : "无")
         let diagnostic = """
-        MauQuota v1.6.0
+        MauQuota v1.7.0
         Codex CLI: \(path)
         \(tr(.account))\(login)
         \(tr(.refreshInterval)): \(preferences.refreshIntervalMinutes) min

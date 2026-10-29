@@ -72,7 +72,7 @@ public enum MenuLocalization {
         switch key {
         case .tooltipHidden: return chinese ? "Codex 额度 · 点击查看账号、额度和设置" : "Codex quotas · Click for account, quotas and settings"
         case .tooltipUnknown: return chinese ? "Codex 额度未知 · 点击查看详情" : "Codex quotas unavailable · Click for details"
-        case .tooltipRings: return chinese ? "橙色外圈：每周额度；灰色内圈：5 小时额度" : "Orange outer ring: weekly quota; gray inner ring: 5-hour quota"
+        case .tooltipRings: return chinese ? "外圈：每周额度；内圈：5 小时额度。绿色 >50%，橙色 21–50%，红色 ≤20%" : "Outer ring: weekly quota; inner ring: 5-hour quota. Green >50%, orange 21–50%, red ≤20%"
         case .loggingInTitle: return chinese ? "Codex 登录中…" : "Codex Signing in…"
         case .checkingTitle: return "Codex …"
         case .loggedOutTitle: return chinese ? "Codex 未登录" : "Codex Signed out"
@@ -98,7 +98,7 @@ public enum MenuLocalization {
         case .simplifiedChinese: return "简体中文"
         case .english: return "English"
         case .copyDiagnostics: return chinese ? "复制诊断信息" : "Copy diagnostic information"
-        case .version: return chinese ? "MauQuota v1.6.0 · DMG 发布支持" : "MauQuota v1.6.0 · DMG distribution"
+        case .version: return chinese ? "MauQuota v1.7.0 · DMG 发布支持" : "MauQuota v1.7.0 · DMG distribution"
         case .quit: return chinese ? "退出 MauQuota" : "Quit MauQuota"
         case .customIntervalTitle: return chinese ? "自定义刷新间隔" : "Custom refresh interval"
         case .customIntervalMessage: return chinese ? "请输入 1–120 之间的整数分钟。新间隔会立即重新计时，不会立即发送请求。" : "Enter a whole number of minutes from 1 to 120. The next interval starts now; no immediate request is made."

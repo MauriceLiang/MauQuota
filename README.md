@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.6.0" src="https://img.shields.io/badge/version-1.6.0-2ea44f">
+  <img alt="Version 1.7.0" src="https://img.shields.io/badge/version-1.7.0-2ea44f">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -22,7 +22,7 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 ## 特性
 
 - **原生轻量** —— Swift + AppKit 编译为单一可执行文件，无 Electron 与 WebView 运行时开销。
-- **双环额度指示** —— 橙色外环代表每周剩余额度，灰色内环代表 5 小时剩余额度；可在菜单中切换为纯文字显示。
+- **双环额度指示** —— 外环代表每周剩余额度，内环代表 5 小时剩余额度；每个环根据自身剩余比例变色，也可在菜单中切换为纯文字显示。
 - **官方登录流程** —— 通过 Codex CLI 的 `app-server` 发起 ChatGPT 浏览器授权，应用不存储密码或令牌。
 - **按需刷新** —— 预设间隔与 1–120 分钟自定义刷新，睡眠唤醒后自动更新。
 - **隐私优先** —— 只读取额度与账号元数据；诊断信息不包含邮箱、密码或访问令牌。
@@ -36,10 +36,13 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 | --- | --- |
 | `5h 79%` | 5 小时窗口剩余 79% |
 | `7d 45%` | 每周窗口剩余 45% |
-| 橙色外环 | 每周额度剩余比例 |
-| 灰色内环 | 5 小时额度剩余比例 |
+| 外环 | 每周额度剩余比例 |
+| 内环 | 5 小时额度剩余比例 |
+| 绿色 | 剩余 51–100% |
+| 橙色 | 剩余 21–50% |
+| 红色 | 剩余 0–20% |
 
-> 仅当 Codex 返回某个额度窗口时才显示该窗口；缺失额度不会被解释为无限额。
+> 文字仅显示 Codex 返回的额度窗口。缺失或无法确认的窗口以灰色轨道表示未知，不会被解释为无限额；剩余为 0% 时显示淡红色轨道。
 
 ## 工作原理
 
@@ -87,6 +90,10 @@ swift test
 核心逻辑（额度解析、进程通信、偏好设置）均有单元测试覆盖。运行测试需要完整 Xcode（命令行工具不含 XCTest）。
 
 ## 版本记录
+
+**v1.7.0**
+
+- 菜单栏双环根据各自的剩余额度显示绿色、橙色或红色，未知和耗尽状态也有区分。
 
 **v1.6.0**
 

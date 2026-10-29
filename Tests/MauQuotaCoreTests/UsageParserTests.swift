@@ -50,7 +50,7 @@ final class UsageParserTests: XCTestCase {
         XCTAssertEqual(ring.fiveHourRemaining, 75)
     }
 
-    func testWeeklyOnlyOmitsInnerRing() throws {
+    func testWeeklyOnlyHasNoInnerRingProgress() throws {
         let data = Data(#"{"result":{"rateLimits":{"primary":{"usedPercent":12,"windowDurationMins":10080}}}}"#.utf8)
         let ring = QuotaRingState(usage: try UsageParser.parseResponse(data))
         XCTAssertEqual(ring.weeklyRemaining, 88)
