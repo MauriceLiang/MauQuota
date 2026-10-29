@@ -183,7 +183,7 @@ public final class CodexAppServer {
                                    output: stdout.fileHandleForReading,
                                    deadline: ProcessInfo.processInfo.systemUptime + timeout)
         let initResponse = try session.request(id: 1, method: "initialize", params: [
-            "clientInfo": ["name": "mauquota_macos", "title": "MauQuota", "version": "1.7.0"],
+            "clientInfo": ["name": "mauquota_macos", "title": "MauQuota", "version": "1.8.0"],
             "capabilities": [:]
         ])
         guard initResponse["result"] is [String: Any] else { throw ClientError.invalidHandshake }

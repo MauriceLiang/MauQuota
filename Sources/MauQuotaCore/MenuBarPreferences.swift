@@ -99,7 +99,7 @@ public enum MenuLocalization {
         case .simplifiedChinese: return "简体中文"
         case .english: return "English"
         case .copyDiagnostics: return chinese ? "复制诊断信息" : "Copy diagnostic information"
-        case .version: return chinese ? "MauQuota v1.7.0 · DMG 发布支持" : "MauQuota v1.7.0 · DMG distribution"
+        case .version: return chinese ? "MauQuota v1.8.0 · DMG 发布支持" : "MauQuota v1.8.0 · DMG distribution"
         case .quit: return chinese ? "退出 MauQuota" : "Quit MauQuota"
         case .customIntervalTitle: return chinese ? "自定义刷新间隔" : "Custom refresh interval"
         case .customIntervalMessage: return chinese ? "请输入 1–120 之间的整数分钟。新间隔会立即重新计时，不会立即发送请求。" : "Enter a whole number of minutes from 1 to 120. The next interval starts now; no immediate request is made."
