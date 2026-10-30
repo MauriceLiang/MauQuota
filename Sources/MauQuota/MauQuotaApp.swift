@@ -77,6 +77,8 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     @objc private func refreshClicked(_ sender: Any?) { refresh() }
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
+    // NSMenu auto-validation disables informational rows without a responding action.
+    @objc private func informationalItemClicked(_ sender: Any?) {}
 
     @objc private func coloredRingToggled(_ sender: Any?) {
         appearanceSettings.showsColoredRing.toggle()
@@ -143,7 +145,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out / unknown" : "未登录/未知") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
         let issue = displayedError() ?? (activeLanguage == .english ? "None" : "无")
         let diagnostic = """
-        MauQuota v1.8.5
+        MauQuota v1.8.6
         Codex CLI: \(path)
         \(tr(.account))\(login)
         \(tr(.refreshInterval)): \(preferences.refreshIntervalMinutes) min
@@ -279,10 +281,10 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         }
 
         if let account = lastAccount {
-            menu.addItem(disabled: tr(.account) + account.label)
-            if let email = account.email, !email.isEmpty { menu.addItem(disabled: "    \(email)") }
+            addInformationItem(tr(.account) + account.label, to: menu)
+            if let email = account.email, !email.isEmpty { addInformationItem("    \(email)", to: menu) }
         } else if hasChecked && lastError == nil {
-            menu.addItem(disabled: tr(.loggedOutDescription))
+            addInformationItem(tr(.loggedOutDescription), to: menu)
         }
 
         if let usage = lastUsage {
@@ -293,7 +295,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             date.locale = activeLanguage.locale
             date.dateStyle = .none
             date.timeStyle = .medium
-            menu.addItem(disabled: tr(.updatedAt) + date.string(from: usage.fetchedAt))
+            addInformationItem(tr(.updatedAt) + date.string(from: usage.fetchedAt), to: menu)
         }
         if let error = lastError {
             menu.addItem(.separator())
@@ -434,7 +436,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     private func addDetail(_ window: QuotaWindow, to menu: NSMenu) {
-        menu.addItem(disabled: "\(window.label) \(tr(.remaining)) \(window.remainingPercent)%")
+        addInformationItem("\(window.label) \(tr(.remaining)) \(window.remainingPercent)%", to: menu)
         let reset: String
         if let resetsAt = window.resetsAt {
             let formatter = DateFormatter()
@@ -443,7 +445,19 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             formatter.timeStyle = .short
             reset = formatter.string(from: resetsAt)
         } else { reset = tr(.notProvided) }
-        menu.addItem(disabled: "    \(tr(.resetAt))\(reset)")
+        addInformationItem("    \(tr(.resetAt))\(reset)", to: menu)
+    }
+
+    private func addInformationItem(_ title: String, to menu: NSMenu) {
+        let item = NSMenuItem(
+            title: title, action: #selector(informationalItemClicked(_:)), keyEquivalent: ""
+        )
+        item.target = self
+        item.attributedTitle = NSAttributedString(
+            string: title, attributes: [.foregroundColor: NSColor.labelColor]
+        )
+        item.isEnabled = true
+        menu.addItem(item)
     }
 }
 
