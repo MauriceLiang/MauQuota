@@ -1,13 +1,9 @@
-# Third-party notices
+# Third-Party Notices
 
-## OpenAI Codex App Server
+MauQuota does not bundle Codex CLI, Codex App Server, Node.js, Electron, or other third-party runtime binaries.
 
-- Component: official standalone Codex App Server native runtime bundled with MauQuota
-- Upstream binary: `codex-app-server`
-- Bundled version: `0.169.0`
-- Upstream: https://github.com/openai/codex
-- License: Apache License 2.0
-- License text: included in the application bundle at `Contents/Resources/Codex-LICENSE.txt`
-- The official release archive is verified against its published SHA-256 checksum during CI.
+The native OAuth implementation currently reuses the public OAuth client identifier and authorization-code/PKCE flow used by Codex CLI. The client identifier is not a client secret. This reuse is an implementation detail, not an endorsement or a guarantee that OpenAI will maintain compatibility for third-party applications.
 
-MauQuota invokes the bundled App Server only for account, rate-limit, and ChatGPT browser-login RPCs. MauQuota is an independent third-party project and is not affiliated with or endorsed by OpenAI.
+MauQuota directly calls ChatGPT web-backend endpoints for Codex usage and reset-credit operations. These endpoints are not documented as a stable public API and may change or become unavailable without notice.
+
+MauQuota is an independent third-party project and is not affiliated with, endorsed by, or sponsored by OpenAI.
