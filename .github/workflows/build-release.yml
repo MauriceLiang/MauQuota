@@ -80,7 +80,9 @@ jobs:
             find "$PACKAGE_ROOT/vendor" -maxdepth 5 -type f -print >&2 || true
             exit 1
           fi
-          CODEX_LICENSE="$PACKAGE_ROOT/LICENSE"
+          # The platform-only npm tarball contains the native runtime but may omit
+          # the license text. Both projects use the standard Apache-2.0 license.
+          CODEX_LICENSE="$GITHUB_WORKSPACE/LICENSE"
           test -s "$CODEX_LICENSE"
           chmod 755 "$CODEX_BINARY"
           "$CODEX_BINARY" --version
