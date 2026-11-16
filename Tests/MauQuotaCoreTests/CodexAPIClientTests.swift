@@ -30,43 +30,24 @@ private final class StubURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
-    private static func materializeBodyStream(in request: URLRequest) -> URLRequest {
-        guard let stream = request.httpBodyStream else { return request }
-
-        var capturedRequest = request
-        stream.open()
-        defer { stream.close() }
-
-        var body = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while true {
-            let count = buffer.withUnsafeMutableBufferPointer { bytes in
-                stream.read(bytes.baseAddress!, maxLength: bytes.count)
-            }
-            guard count > 0 else { break }
-            body.append(contentsOf: buffer.prefix(count))
-        }
-
-        capturedRequest.httpBody = body
-        capturedRequest.httpBodyStream = nil
-        return capturedRequest
+    static func record(_ request: URLRequest) {
+        lock.lock()
+        requests.append(request)
+        lock.unlock()
     }
 
     override func startLoading() {
-        let capturedRequest = Self.materializeBodyStream(in: request)
-
         Self.lock.lock()
         let handler = Self.handler
-        Self.requests.append(capturedRequest)
         Self.lock.unlock()
 
         guard let handler else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        let (status, data) = handler(capturedRequest)
+        let (status, data) = handler(request)
         let response = HTTPURLResponse(
-            url: capturedRequest.url!,
+            url: request.url!,
             statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
@@ -89,7 +70,12 @@ final class CodexAPIClientTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        return CodexAPIClient(timeoutSeconds: 2, session: session, credentialStore: store)
+        return CodexAPIClient(
+            timeoutSeconds: 2,
+            session: session,
+            credentialStore: store,
+            requestObserver: { StubURLProtocol.record($0) }
+        )
     }
 
     private func credentials(expiry: Date = Date().addingTimeInterval(3_600)) -> CodexOAuthCredentials {
@@ -154,8 +140,6 @@ final class CodexAPIClientTests: XCTestCase {
             XCTAssertEqual(request.url?.host, "auth.openai.com")
             XCTAssertEqual(request.url?.path, "/oauth/token")
             XCTAssertEqual(request.httpMethod, "POST")
-            let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
-            XCTAssertTrue(body.contains("refresh-token"))
             return (200, Data(#"{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600}"#.utf8))
         }
 
@@ -163,6 +147,9 @@ final class CodexAPIClientTests: XCTestCase {
         XCTAssertEqual(snapshot.usage?.shortWindow?.remainingPercent, 79)
         XCTAssertEqual(store.value?.accessToken, "new-access")
         XCTAssertEqual(store.value?.refreshToken, "new-refresh")
+        let refreshRequest = try XCTUnwrap(StubURLProtocol.requests.first { $0.url?.host == "auth.openai.com" })
+        let refreshBody = String(data: refreshRequest.httpBody ?? Data(), encoding: .utf8) ?? ""
+        XCTAssertTrue(refreshBody.contains("refresh-token"))
         XCTAssertEqual(StubURLProtocol.requests.count, 3)
     }
 
@@ -210,9 +197,6 @@ final class CodexAPIClientTests: XCTestCase {
         StubURLProtocol.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/backend-api/wham/rate-limit-reset-credits/consume")
-            let body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: String]
-            XCTAssertEqual(body?["redeem_request_id"], "attempt-123")
-            XCTAssertEqual(body?["credit_id"], "credit-1")
             return (200, Data(#"{"code":"already_redeemed","windows_reset":0}"#.utf8))
         }
 
@@ -221,20 +205,29 @@ final class CodexAPIClientTests: XCTestCase {
             idempotencyKey: "attempt-123"
         )
         XCTAssertEqual(result, .alreadyRedeemed)
+        let consumeRequest = try XCTUnwrap(StubURLProtocol.requests.first {
+            $0.url?.path == "/backend-api/wham/rate-limit-reset-credits/consume"
+        })
+        let body = (try? JSONSerialization.jsonObject(with: consumeRequest.httpBody ?? Data())) as? [String: String]
+        XCTAssertEqual(body?["redeem_request_id"], "attempt-123")
+        XCTAssertEqual(body?["credit_id"], "credit-1")
     }
 
     func testConsumeOmitsCreditIDWhenUsingNextAvailableCredit() throws {
         let store = MemoryCredentialStore(credentials())
         StubURLProtocol.handler = { request in
-            let body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: String]
-            XCTAssertEqual(body?["redeem_request_id"], "attempt-456")
-            XCTAssertNil(body?["credit_id"])
             return (200, Data(#"{"code":"reset","windows_reset":2}"#.utf8))
         }
         XCTAssertEqual(
             try makeClient(store: store).consumeResetCredit(creditID: nil, idempotencyKey: "attempt-456"),
             .reset
         )
+        let consumeRequest = try XCTUnwrap(StubURLProtocol.requests.first {
+            $0.url?.path == "/backend-api/wham/rate-limit-reset-credits/consume"
+        })
+        let body = (try? JSONSerialization.jsonObject(with: consumeRequest.httpBody ?? Data())) as? [String: String]
+        XCTAssertEqual(body?["redeem_request_id"], "attempt-456")
+        XCTAssertNil(body?["credit_id"])
     }
 
     func testPKCEAuthorizationURLIncludesRequiredSecurityParameters() throws {
