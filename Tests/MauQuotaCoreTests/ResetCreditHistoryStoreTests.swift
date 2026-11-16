@@ -4,7 +4,7 @@ import Foundation
 
 final class ResetCreditHistoryStoreTests: XCTestCase {
     private func makeStore() -> (ResetCreditHistoryStore, UserDefaults, String) {
-        let suite = "ResetCreditHistoryStoreTests.\\(UUID().uuidString)"
+        let suite = "ResetCreditHistoryStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         return (ResetCreditHistoryStore(defaults: defaults), defaults, suite)
