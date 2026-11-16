@@ -15,6 +15,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private var lastUsage: CodexUsage?
     private var lastError: String?
     private var isLoginError = false
+    private var resetCreditsWindowController: ResetCreditsWindowController?
     private let reader = CodexAppServer()
     private let appearanceSettings = MenuBarAppearanceSettings()
     private let preferences = MenuBarPreferences()
@@ -78,6 +79,25 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
 
+    @objc private func resetCreditsClicked(_ sender: Any?) {
+        guard let account = lastAccount, account.isChatGPT else { return }
+        if let controller = resetCreditsWindowController {
+            controller.updateUsage(lastUsage)
+            controller.present()
+            return
+        }
+        let controller = ResetCreditsWindowController(
+            reader: reader,
+            account: account,
+            usage: lastUsage,
+            language: activeLanguage
+        ) { [weak self] in
+            self?.refresh()
+        }
+        resetCreditsWindowController = controller
+        controller.present()
+    }
+
     @objc private func coloredRingToggled(_ sender: Any?) {
         appearanceSettings.showsColoredRing.toggle()
         drawMenu() // UI-only change; no quota request.
@@ -135,6 +155,8 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
               let value = item.representedObject as? String,
               let selectedLanguage = DisplayLanguage(rawValue: value) else { return }
         preferences.language = selectedLanguage
+        resetCreditsWindowController?.close()
+        resetCreditsWindowController = nil
         drawMenu() // Language changes instantly; no restart or quota request.
     }
 
@@ -232,9 +254,14 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     private func apply(_ snapshot: CodexSnapshot) {
-        if lastAccount != snapshot.account { lastUsage = nil }
+        if lastAccount != snapshot.account {
+            lastUsage = nil
+            resetCreditsWindowController?.close()
+            resetCreditsWindowController = nil
+        }
         lastAccount = snapshot.account
         lastUsage = snapshot.usage
+        resetCreditsWindowController?.updateUsage(snapshot.usage)
         lastError = snapshot.quotaError
         isLoginError = false
         if let error = lastError { logger.error("额度读取失败：\(error, privacy: .public)") }
@@ -336,6 +363,15 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         refreshItem.target = self
         refreshItem.isEnabled = !isFetching && !isLoggingIn
         menu.addItem(refreshItem)
+
+        let resetItem = NSMenuItem(
+            title: activeLanguage == .simplifiedChinese ? "使用限额重置…" : "Usage limit resets…",
+            action: #selector(resetCreditsClicked(_:)),
+            keyEquivalent: ""
+        )
+        resetItem.target = self
+        resetItem.isEnabled = lastAccount?.isChatGPT == true && !isFetching && !isLoggingIn
+        menu.addItem(resetItem)
 
         menu.addItem(.separator())
         let coloredRingItem = NSMenuItem(
