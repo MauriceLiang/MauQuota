@@ -15,6 +15,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private var lastUsage: CodexUsage?
     private var lastError: String?
     private var isLoginError = false
+    private var resetCreditsWindowController: ResetCreditsWindowController?
     private let reader = CodexAppServer()
     private let appearanceSettings = MenuBarAppearanceSettings()
     private let preferences = MenuBarPreferences()
@@ -78,6 +79,25 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
 
+    @objc private func resetCreditsClicked(_ sender: Any?) {
+        guard let account = lastAccount, account.isChatGPT else { return }
+        if let controller = resetCreditsWindowController {
+            controller.updateUsage(lastUsage)
+            controller.present()
+            return
+        }
+        let controller = ResetCreditsWindowController(
+            reader: reader,
+            account: account,
+            usage: lastUsage,
+            language: activeLanguage
+        ) { [weak self] in
+            self?.refresh()
+        }
+        resetCreditsWindowController = controller
+        controller.present()
+    }
+
     @objc private func coloredRingToggled(_ sender: Any?) {
         appearanceSettings.showsColoredRing.toggle()
         drawMenu() // UI-only change; no quota request.
@@ -135,16 +155,21 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
               let value = item.representedObject as? String,
               let selectedLanguage = DisplayLanguage(rawValue: value) else { return }
         preferences.language = selectedLanguage
+        resetCreditsWindowController?.close()
+        resetCreditsWindowController = nil
         drawMenu() // Language changes instantly; no restart or quota request.
     }
 
     @objc private func copyDiagnosisClicked(_ sender: Any?) {
-        let path = reader.resolvedCLIPath ?? (activeLanguage == .english ? "Not found" : "未找到")
+        let path = reader.resolvedRuntimePath ?? (activeLanguage == .english ? "Not found" : "未找到")
+        let source = reader.resolvedRuntimeSource ?? (activeLanguage == .english ? "Unavailable" : "不可用")
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out / unknown" : "未登录/未知") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
         let issue = displayedError() ?? (activeLanguage == .english ? "None" : "无")
         let diagnostic = """
-        MauQuota v1.8.5
-        Codex CLI: \(path)
+        MauQuota v\(appVersion)
+        Codex App Server: \(path)
+        Codex runtime source: \(source)
         \(tr(.account))\(login)
         \(tr(.refreshInterval)): \(preferences.refreshIntervalMinutes) min
         \(tr(.language)): \(preferences.language.rawValue)
@@ -191,7 +216,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let result = Result {
                 try self.reader.loginWithChatGPT { url in
-                    DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+                    DispatchQueue.main.sync { NSWorkspace.shared.open(url) }
                 }
                 return try self.reader.loadSnapshot()
             }
@@ -199,6 +224,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.isLoggingIn = false
                 self.hasChecked = true
+                var loginFailureMessage: String?
                 switch result {
                 case .success(let snapshot):
                     self.apply(snapshot)
@@ -206,17 +232,36 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
                 case .failure(let error):
                     self.lastError = error.localizedDescription
                     self.isLoginError = true
+                    loginFailureMessage = self.displayedError()
                     self.logger.error("官方登录失败：\(error.localizedDescription, privacy: .public)")
                 }
                 self.drawMenu()
+                if let loginFailureMessage {
+                    self.showLoginError(loginFailureMessage)
+                }
             }
         }
     }
 
+    private func showLoginError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = activeLanguage == .english ? "ChatGPT sign-in failed" : "ChatGPT 登录失败"
+        alert.informativeText = message
+        alert.addButton(withTitle: activeLanguage == .english ? "OK" : "确定")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
     private func apply(_ snapshot: CodexSnapshot) {
-        if lastAccount != snapshot.account { lastUsage = nil }
+        if lastAccount != snapshot.account {
+            lastUsage = nil
+            resetCreditsWindowController?.close()
+            resetCreditsWindowController = nil
+        }
         lastAccount = snapshot.account
         lastUsage = snapshot.usage
+        resetCreditsWindowController?.updateUsage(snapshot.usage)
         lastError = snapshot.quotaError
         isLoginError = false
         if let error = lastError { logger.error("额度读取失败：\(error, privacy: .public)") }
@@ -279,10 +324,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         }
 
         if let account = lastAccount {
-            menu.addItem(disabled: tr(.account) + account.label)
-            if let email = account.email, !email.isEmpty { menu.addItem(disabled: "    \(email)") }
+            addInformationalItem(tr(.account) + account.label, to: menu)
+            if let email = account.email, !email.isEmpty {
+                addInformationalItem("    \(email)", to: menu)
+            }
         } else if hasChecked && lastError == nil {
-            menu.addItem(disabled: tr(.loggedOutDescription))
+            addInformationalItem(tr(.loggedOutDescription), to: menu)
         }
 
         if let usage = lastUsage {
@@ -293,7 +340,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             date.locale = activeLanguage.locale
             date.dateStyle = .none
             date.timeStyle = .medium
-            menu.addItem(disabled: tr(.updatedAt) + date.string(from: usage.fetchedAt))
+            addInformationalItem(tr(.updatedAt) + date.string(from: usage.fetchedAt), to: menu)
         }
         if let error = lastError {
             menu.addItem(.separator())
@@ -316,6 +363,15 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         refreshItem.target = self
         refreshItem.isEnabled = !isFetching && !isLoggingIn
         menu.addItem(refreshItem)
+
+        let resetItem = NSMenuItem(
+            title: activeLanguage == .simplifiedChinese ? "使用限额重置…" : "Usage limit resets…",
+            action: #selector(resetCreditsClicked(_:)),
+            keyEquivalent: ""
+        )
+        resetItem.target = self
+        resetItem.isEnabled = lastAccount?.isChatGPT == true && !isFetching && !isLoggingIn
+        menu.addItem(resetItem)
 
         menu.addItem(.separator())
         let coloredRingItem = NSMenuItem(
@@ -416,25 +472,33 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             return "Codex rejected the request (error code: \(code))"
         }
         let translations: [String: String] = [
-            "未找到 Codex CLI，请先安装官方 Codex CLI": "Codex CLI not found; install the official Codex CLI",
-            "无法启动 Codex CLI，请检查安装位置和权限": "Could not launch Codex CLI; check its path and permissions",
+            "未找到可用的 Codex App Server 运行组件，请重新安装 MauQuota": "Bundled Codex App Server not found; reinstall MauQuota",
+            "无法启动 Codex App Server，请检查应用完整性和执行权限": "Could not launch the Codex App Server; reinstall MauQuota or check app permissions",
+            "无法打开系统浏览器，请检查默认浏览器设置后重试": "Could not open the system browser; check your default browser and try again",
             "Codex 连接已断开（写入失败）": "Codex connection closed unexpectedly (write failed)",
             "读取 Codex 数据时发生系统错误": "System error while reading Codex data",
             "连接超时，请检查网络、登录状态或代理": "Connection timed out; check your network, login, or proxy",
-            "Codex 提前退出（可能是 CLI 版本或运行环境问题）": "Codex CLI exited early; check its version and environment",
+            "Codex App Server 提前退出（可能是版本或运行环境问题）": "Codex App Server exited early; check its version and environment",
             "Codex 返回的数据过大": "Codex response was too large",
-            "Codex 初始化失败，请更新官方 CLI": "Codex initialization failed; update the official CLI",
+            "Codex 初始化失败，请更新 MauQuota": "Codex initialization failed; update MauQuota",
             "Codex 返回了不兼容的账号数据": "Codex returned incompatible account data",
             "已连接，但服务没有返回可识别的额度": "Connected, but no recognizable quota limits were returned",
             "Codex 返回了不安全或无效的登录地址": "Codex returned an invalid or unsafe login URL",
-            "Codex 未提供浏览器登录地址，请更新 CLI": "Codex did not provide a browser login URL; update the CLI",
+            "官方 Codex App Server 未提供浏览器登录地址，请更新 MauQuota": "The bundled App Server did not provide a browser login URL; update MauQuota",
             "浏览器授权未完成或登录失败，可重新尝试": "Browser authorization was not completed; please try again"
         ]
         return translations[message] ?? message
     }
 
+    private func addInformationalItem(_ title: String, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.view = InformationalMenuItemView(title: title, font: menu.font)
+        item.isEnabled = false
+        menu.addItem(item)
+    }
+
     private func addDetail(_ window: QuotaWindow, to menu: NSMenu) {
-        menu.addItem(disabled: "\(window.label) \(tr(.remaining)) \(window.remainingPercent)%")
+        addInformationalItem("\(window.label) \(tr(.remaining)) \(window.remainingPercent)%", to: menu)
         let reset: String
         if let resetsAt = window.resetsAt {
             let formatter = DateFormatter()
@@ -443,7 +507,44 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             formatter.timeStyle = .short
             reset = formatter.string(from: resetsAt)
         } else { reset = tr(.notProvided) }
-        menu.addItem(disabled: "    \(tr(.resetAt))\(reset)")
+        addInformationalItem("    \(tr(.resetAt))\(reset)", to: menu)
+    }
+}
+
+/// A menu row that draws its own text, bypassing AppKit's disabled-item dimming.
+private final class InformationalMenuItemView: NSView {
+    init(title: String, font: NSFont) {
+        let label = NSTextField(labelWithString: title)
+        label.font = font
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.isEditable = false
+        label.isSelectable = false
+        label.drawsBackground = false
+        label.sizeToFit()
+
+        let rowHeight: CGFloat = 28
+        let leadingInset: CGFloat = 30
+        let trailingInset: CGFloat = 12
+        super.init(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: leadingInset + label.frame.width + trailingInset,
+            height: rowHeight
+        ))
+
+        // Let AppKit expand the view to the menu's full content width.
+        autoresizingMask = [.width]
+        label.frame.origin = NSPoint(
+            x: leadingInset,
+            y: (rowHeight - label.frame.height) / 2
+        )
+        label.autoresizingMask = [.width]
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 

@@ -29,11 +29,35 @@ public struct CodexSnapshot {
     public let quotaError: String?
 }
 
+/// A banked Codex usage reset returned by the official App Server.
+public struct CodexResetCredit: Equatable, Identifiable {
+    public let id: String
+    public let resetType: String
+    public let status: String
+    public let grantedAt: Date
+    public let expiresAt: Date?
+    public let title: String?
+    public let description: String?
+}
+
+/// A nil credits array means the service returned only the authoritative count.
+public struct CodexResetCredits: Equatable {
+    public let availableCount: Int
+    public let credits: [CodexResetCredit]?
+}
+
+public enum CodexResetConsumeOutcome: String, Equatable {
+    case reset
+    case alreadyRedeemed
+    case nothingToReset
+    case noCredit
+}
+
 /// Uses Codex's supported browser OAuth flow and its app-server account/usage RPCs.
 /// The app neither requests passwords nor handles tokens.
 public final class CodexAppServer {
     public enum ClientError: LocalizedError {
-        case missingCLI
+        case missingRuntime
         case cannotStart
         case writeFailed
         case readFailed
@@ -46,37 +70,48 @@ public final class CodexAppServer {
         case loginInvalidURL
         case loginRejected
         case loginFailed
+        case browserOpenFailed
         case requestRejected(Int?)
+        case chatGPTAuthRequired
+        case resetCreditsUnavailable
 
         public var errorDescription: String? {
             switch self {
-            case .missingCLI: return "未找到 Codex CLI，请先安装官方 Codex CLI"
-            case .cannotStart: return "无法启动 Codex CLI，请检查安装位置和权限"
+            case .missingRuntime: return "未找到可用的 Codex App Server 运行组件，请重新安装 MauQuota"
+            case .cannotStart: return "无法启动 Codex App Server，请检查应用完整性和执行权限"
             case .writeFailed: return "Codex 连接已断开（写入失败）"
             case .readFailed: return "读取 Codex 数据时发生系统错误"
             case .timeout: return "连接超时，请检查网络、登录状态或代理"
-            case .unexpectedEOF: return "Codex 提前退出（可能是 CLI 版本或运行环境问题）"
+            case .unexpectedEOF: return "Codex App Server 提前退出（可能是版本或运行环境问题）"
             case .oversizedResponse: return "Codex 返回的数据过大"
-            case .invalidHandshake: return "Codex 初始化失败，请更新官方 CLI"
+            case .invalidHandshake: return "Codex 初始化失败，请更新 MauQuota"
             case .invalidResponse: return "Codex 返回了不兼容的账号数据"
             case .rateLimitUnavailable: return "已连接，但服务没有返回可识别的额度"
             case .loginInvalidURL: return "Codex 返回了不安全或无效的登录地址"
-            case .loginRejected: return "Codex 未提供浏览器登录地址，请更新 CLI"
+            case .loginRejected: return "官方 Codex App Server 未提供浏览器登录地址，请更新 MauQuota"
             case .loginFailed: return "浏览器授权未完成或登录失败，可重新尝试"
+            case .browserOpenFailed: return "无法打开系统浏览器，请检查默认浏览器设置后重试"
             case .requestRejected(let code): return "Codex 拒绝请求（错误码：\(code.map(String.init) ?? "未知")）"
+            case .chatGPTAuthRequired: return "使用重置额度需要先登录 ChatGPT 账号"
+            case .resetCreditsUnavailable: return "Codex 当前没有提供重置额度详情，请稍后刷新"
             }
         }
     }
 
     private let timeoutSeconds: TimeInterval
     private let cliExecutable: String?
+    private let bundledAppServerExecutable: String?
 
-    public init(timeoutSeconds: TimeInterval = 30, cliExecutable: String? = nil) {
+    public init(timeoutSeconds: TimeInterval = 30,
+                cliExecutable: String? = nil,
+                bundledAppServerExecutable: String? = nil) {
         self.timeoutSeconds = max(0.1, timeoutSeconds)
         self.cliExecutable = cliExecutable
+        self.bundledAppServerExecutable = bundledAppServerExecutable
     }
 
-    public var resolvedCLIPath: String? { findCodex()?.executable }
+    public var resolvedRuntimePath: String? { findRuntime()?.executable }
+    public var resolvedRuntimeSource: String? { findRuntime()?.source }
 
     /// Login status and quotas are checked separately: a quota failure will not hide a valid login.
     public func loadSnapshot() throws -> CodexSnapshot {
@@ -116,9 +151,55 @@ public final class CodexAppServer {
         }
     }
 
+    /// Reads banked reset credits using the official account/rateLimits/read response.
+    public func loadResetCredits() throws -> CodexResetCredits {
+        try withSession(timeout: timeoutSeconds) { session in
+            let accountResponse = try session.request(
+                id: 2, method: "account/read", params: ["refreshToken": false]
+            )
+            let accountResult = try Self.checkedResult(accountResponse)
+            guard let account = accountResult["account"] as? [String: Any],
+                  account["type"] as? String == "chatgpt" else {
+                throw ClientError.chatGPTAuthRequired
+            }
+            let response = try session.request(id: 3, method: "account/rateLimits/read")
+            return try Self.parseResetCredits(response)
+        }
+    }
+
+    /// Consumes exactly the selected reset credit. Reuse the same idempotency key
+    /// if the outcome of a network request is uncertain.
+    public func consumeResetCredit(creditID: String?,
+                                   idempotencyKey: String) throws -> CodexResetConsumeOutcome {
+        guard !idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              creditID?.isEmpty != true else {
+            throw ClientError.invalidResponse
+        }
+        return try withSession(timeout: timeoutSeconds) { session in
+            let accountResponse = try session.request(
+                id: 2, method: "account/read", params: ["refreshToken": false]
+            )
+            let accountResult = try Self.checkedResult(accountResponse)
+            guard let account = accountResult["account"] as? [String: Any],
+                  account["type"] as? String == "chatgpt" else {
+                throw ClientError.chatGPTAuthRequired
+            }
+            let params = Self.resetConsumeParams(creditID: creditID, idempotencyKey: idempotencyKey)
+            let response = try session.request(
+                id: 3, method: "account/rateLimitResetCredit/consume", params: params
+            )
+            let result = try Self.checkedResult(response)
+            guard let rawOutcome = result["outcome"] as? String,
+                  let outcome = CodexResetConsumeOutcome(rawValue: rawOutcome) else {
+                throw ClientError.invalidResponse
+            }
+            return outcome
+        }
+    }
+
     /// Browser login: Codex starts a localhost OAuth callback listener and owns all credentials.
     /// `openURL` must hand the URL to a genuine system browser, not an embedded web view.
-    public func loginWithChatGPT(openURL: (URL) -> Void) throws {
+    public func loginWithChatGPT(openURL: (URL) -> Bool) throws {
         try withSession(timeout: timeoutSeconds) { session in
             let response = try session.request(id: 2, method: "account/login/start", params: ["type": "chatgpt"])
             let result = try Self.checkedResult(response)
@@ -129,7 +210,7 @@ public final class CodexAppServer {
                 throw ClientError.loginRejected
             }
             session.extendDeadline(to: 10 * 60)
-            openURL(url)
+            guard openURL(url) else { throw ClientError.browserOpenFailed }
             while true {
                 let notification = try session.nextNotification(method: "account/login/completed")
                 guard let params = notification["params"] as? [String: Any],
@@ -152,6 +233,56 @@ public final class CodexAppServer {
         return usage
     }
 
+    static func resetConsumeParams(creditID: String?, idempotencyKey: String) -> [String: Any] {
+        var params: [String: Any] = ["idempotencyKey": idempotencyKey]
+        if let creditID { params["creditId"] = creditID }
+        return params
+    }
+
+    private static func parseResetCredits(_ response: [String: Any]) throws -> CodexResetCredits {
+        let result = try checkedResult(response)
+        guard let summary = result["rateLimitResetCredits"] as? [String: Any],
+              let countValue = summary["availableCount"] as? NSNumber else {
+            throw ClientError.resetCreditsUnavailable
+        }
+        let count = countValue.intValue
+        guard count >= 0 else { throw ClientError.invalidResponse }
+
+        guard let rawCredits = summary["credits"], !(rawCredits is NSNull) else {
+            return CodexResetCredits(availableCount: count, credits: nil)
+        }
+        guard let rows = rawCredits as? [[String: Any]] else { throw ClientError.invalidResponse }
+        let credits = try rows.map { row -> CodexResetCredit in
+            guard let id = row["id"] as? String, !id.isEmpty,
+                  let resetType = row["resetType"] as? String, !resetType.isEmpty,
+                  let status = row["status"] as? String, !status.isEmpty,
+                  let grantedAtValue = row["grantedAt"] as? NSNumber,
+                  grantedAtValue.doubleValue.isFinite, grantedAtValue.doubleValue > 0 else {
+                throw ClientError.invalidResponse
+            }
+            let expiry: Date?
+            if let rawExpiry = row["expiresAt"], !(rawExpiry is NSNull) {
+                guard let value = rawExpiry as? NSNumber,
+                      value.doubleValue.isFinite, value.doubleValue > 0 else {
+                    throw ClientError.invalidResponse
+                }
+                expiry = Date(timeIntervalSince1970: value.doubleValue)
+            } else {
+                expiry = nil
+            }
+            return CodexResetCredit(
+                id: id,
+                resetType: resetType,
+                status: status,
+                grantedAt: Date(timeIntervalSince1970: grantedAtValue.doubleValue),
+                expiresAt: expiry,
+                title: row["title"] as? String,
+                description: row["description"] as? String
+            )
+        }
+        return CodexResetCredits(availableCount: count, credits: credits)
+    }
+
     private static func checkedResult(_ response: [String: Any]) throws -> [String: Any] {
         if let error = response["error"] as? [String: Any] {
             throw ClientError.requestRejected((error["code"] as? NSNumber)?.intValue)
@@ -161,10 +292,10 @@ public final class CodexAppServer {
     }
 
     private func withSession<T>(timeout: TimeInterval, body: (CodexSession) throws -> T) throws -> T {
-        guard let resolved = findCodex() else { throw ClientError.missingCLI }
+        guard let resolved = findRuntime() else { throw ClientError.missingRuntime }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: resolved.executable)
-        process.arguments = ["app-server", "--stdio"]
+        process.arguments = resolved.arguments
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = resolved.path
         Self.applyMacOSSystemProxy(to: &environment)
@@ -183,7 +314,7 @@ public final class CodexAppServer {
                                    output: stdout.fileHandleForReading,
                                    deadline: ProcessInfo.processInfo.systemUptime + timeout)
         let initResponse = try session.request(id: 1, method: "initialize", params: [
-            "clientInfo": ["name": "mauquota_macos", "title": "MauQuota", "version": "1.8.5"],
+            "clientInfo": ["name": "mauquota_macos", "title": "MauQuota", "version": "1.9.0"],
             "capabilities": [:]
         ])
         guard initResponse["result"] is [String: Any] else { throw ClientError.invalidHandshake }
@@ -239,7 +370,7 @@ public final class CodexAppServer {
         try? stdout.fileHandleForReading.close()
     }
 
-    private func findCodex() -> (executable: String, path: String)? {
+    private func findRuntime() -> (executable: String, path: String, source: String, arguments: [String])? {
         let env = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var directories = (env["PATH"] ?? "").split(separator: ":").map(String.init)
@@ -257,17 +388,31 @@ public final class CodexAppServer {
         }
         var visited = Set<String>()
         directories = directories.filter { visited.insert($0).inserted }
-        let path = directories.joined(separator: ":")
 
         if let cliExecutable, FileManager.default.isExecutableFile(atPath: cliExecutable) {
-            return (cliExecutable, path)
+            return (cliExecutable, directories.joined(separator: ":"), "explicit Codex CLI", ["app-server", "--stdio"])
         }
-        // Explicit path can be set for custom installations launched from Finder.
         if let explicit = env["CODEXMETER_CODEX_PATH"],
-           FileManager.default.isExecutableFile(atPath: explicit) { return (explicit, path) }
+           FileManager.default.isExecutableFile(atPath: explicit) {
+            return (explicit, directories.joined(separator: ":"), "environment override", ["app-server", "--stdio"])
+        }
+
+        // Prefer the official standalone App Server binary bundled in MauQuota.
+        let bundled = bundledAppServerExecutable
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/codex-app-server").path
+        if FileManager.default.isExecutableFile(atPath: bundled) {
+            let helperDirectory = URL(fileURLWithPath: bundled).deletingLastPathComponent().path
+            let runtimePath = ([helperDirectory] + directories).joined(separator: ":")
+            return (bundled, runtimePath, "bundled App Server", ["--listen", "stdio://"])
+        }
+
+        // Retain compatibility with existing Codex CLI installations.
+        let path = directories.joined(separator: ":")
         for directory in directories {
             let candidate = "\(directory)/codex"
-            if FileManager.default.isExecutableFile(atPath: candidate) { return (candidate, path) }
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return (candidate, path, "system Codex CLI", ["app-server", "--stdio"])
+            }
         }
         return nil
     }
