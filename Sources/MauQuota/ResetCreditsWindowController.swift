@@ -2,6 +2,12 @@ import AppKit
 import Foundation
 import MauQuotaCore
 
+/// NSScrollView normally uses a bottom-left document origin. A flipped document
+/// view keeps short content pinned to the visible top of the scroll viewport.
+private final class TopAlignedStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 final class ResetCreditsWindowController: NSWindowController {
     private enum Tab: Int {
         case available = 0
@@ -24,7 +30,7 @@ final class ResetCreditsWindowController: NSWindowController {
     private var selectedTab: Tab = .available
 
     private let tabs: NSSegmentedControl
-    private let contentStack = NSStackView()
+    private let contentStack = TopAlignedStackView()
     private let scrollView = NSScrollView()
     private let refreshButton: NSButton
 
@@ -274,6 +280,15 @@ final class ResetCreditsWindowController: NSWindowController {
         )
         footer.maximumNumberOfLines = 2
         addContent(footer)
+        scrollContentToTop()
+    }
+
+    /// Re-anchor the flipped document view after rebuilding either tab.
+    private func scrollContentToTop() {
+        scrollView.layoutSubtreeIfNeeded()
+        let clipView = scrollView.contentView
+        clipView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(clipView)
     }
 
     private func renderAvailable() {

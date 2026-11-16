@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.7-orange">
+  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.8-orange">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -95,6 +95,11 @@ swift test
 核心逻辑（额度解析、进程通信、偏好设置）均有单元测试覆盖。运行测试需要完整 Xcode（命令行工具不含 XCTest）。
 
 ## 版本记录
+
+**v1.8.6-preview.8**
+
+- 修复短内容在 NSScrollView 中因非翻转文档坐标系而贴近底部的问题；文档视图改为顶部原点。
+- 每次重建可用额度或历史记录页面后，将滚动位置重置到顶部。
 
 **v1.8.6-preview.7**
 
