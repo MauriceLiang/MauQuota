@@ -74,12 +74,14 @@ jobs:
           echo "$EXPECTED_SHA256  $RUNTIME_DIR/$ASSET" | shasum -a 256 -c -
           tar -xzf "$RUNTIME_DIR/$ASSET" -C "$EXTRACT_DIR"
 
-          APP_SERVER_BINARY="$(find "$EXTRACT_DIR" -type f -name codex-app-server -print -quit)"
+          # The upstream archive names the executable after its target triple.
+          APP_SERVER_BINARY="$(find "$EXTRACT_DIR" -type f -print -quit)"
           if [ -z "$APP_SERVER_BINARY" ]; then
-            echo "Could not find codex-app-server in the official release archive" >&2
-            find "$EXTRACT_DIR" -maxdepth 4 -type f -print >&2 || true
+            echo "Could not find an executable in the official App Server release archive" >&2
+            find "$EXTRACT_DIR" -maxdepth 4 -ls >&2 || true
             exit 1
           fi
+          file "$APP_SERVER_BINARY"
           CODEX_LICENSE="$RUNTIME_DIR/Codex-LICENSE.txt"
           curl -fsSL "https://raw.githubusercontent.com/openai/codex/rust-v$CODEX_APP_SERVER_VERSION/LICENSE" -o "$CODEX_LICENSE"
           test -s "$CODEX_LICENSE"
