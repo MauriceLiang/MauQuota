@@ -8,7 +8,7 @@ private final class TopAlignedStackView: NSStackView {
     override var isFlipped: Bool { true }
 }
 
-final class ResetCreditsWindowController: NSWindowController {
+final class ResetCreditsWindowController: NSWindowController, NSWindowDelegate {
     private enum Tab: Int {
         case available = 0
         case history = 1
@@ -33,6 +33,7 @@ final class ResetCreditsWindowController: NSWindowController {
     private let contentStack = TopAlignedStackView()
     private let scrollView = NSScrollView()
     private let refreshButton: NSButton
+    var onWindowClose: (() -> Void)?
 
     private var isChinese: Bool { language == .simplifiedChinese }
 
@@ -71,6 +72,7 @@ final class ResetCreditsWindowController: NSWindowController {
         window.center()
         super.init(window: window)
         window.isReleasedWhenClosed = false
+        window.delegate = self
         buildInterface()
     }
 
@@ -232,7 +234,9 @@ final class ResetCreditsWindowController: NSWindowController {
         render()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let result = Result { try self.reader.loadResetCredits() }
+            let result = autoreleasepool {
+                Result { try self.reader.loadResetCredits() }
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isLoading = false
@@ -565,11 +569,13 @@ final class ResetCreditsWindowController: NSWindowController {
         render()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let result = Result {
-                try self.reader.consumeResetCredit(
-                    creditID: attempt.creditID,
-                    idempotencyKey: attempt.idempotencyKey
-                )
+            let result = autoreleasepool {
+                Result {
+                    try self.reader.consumeResetCredit(
+                        creditID: attempt.creditID,
+                        idempotencyKey: attempt.idempotencyKey
+                    )
+                }
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -675,6 +681,12 @@ final class ResetCreditsWindowController: NSWindowController {
         let line = NSBox()
         line.boxType = .separator
         return line
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        let handler = onWindowClose
+        onWindowClose = nil
+        handler?()
     }
 
     private func clearContent() {
