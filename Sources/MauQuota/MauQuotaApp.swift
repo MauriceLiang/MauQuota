@@ -59,6 +59,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         refreshTimer?.invalidate()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        reader.invalidateSession()
     }
 
     /// Changing the preference always discards the old timer before creating another.
@@ -95,6 +96,11 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             self?.refresh()
         }
         resetCreditsWindowController = controller
+        controller.onWindowClose = { [weak self, weak controller] in
+            guard let self, let controller,
+                  self.resetCreditsWindowController === controller else { return }
+            self.resetCreditsWindowController = nil
+        }
         controller.present()
     }
 
@@ -190,7 +196,9 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         logger.info("开始检查 Codex 账号及额度")
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            let result = Result { try self.reader.loadSnapshot() }
+            let result = autoreleasepool {
+                Result { try self.reader.loadSnapshot() }
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isFetching = false
@@ -217,11 +225,13 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         logger.info("开始官方 ChatGPT 浏览器授权")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let result = Result {
-                try self.reader.loginWithChatGPT { url in
-                    DispatchQueue.main.sync { NSWorkspace.shared.open(url) }
+            let result = autoreleasepool {
+                Result {
+                    try self.reader.loginWithChatGPT { url in
+                        DispatchQueue.main.sync { NSWorkspace.shared.open(url) }
+                    }
+                    return try self.reader.loadSnapshot()
                 }
-                return try self.reader.loadSnapshot()
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }

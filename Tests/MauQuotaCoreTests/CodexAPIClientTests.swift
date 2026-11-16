@@ -250,6 +250,19 @@ final class CodexAPIClientTests: XCTestCase {
         XCTAssertEqual(query["redirect_uri"], CodexOAuthCore.redirectURI)
     }
 
+    func testDefaultSessionConfigurationDisablesCachesAndPersistentCredentials() {
+        let configuration = CodexAPIClient.makeSessionConfiguration(timeoutSeconds: 12)
+
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertNil(configuration.urlCache)
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertEqual(configuration.httpMaximumConnectionsPerHost, 2)
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 12, accuracy: 0.001)
+        XCTAssertEqual(configuration.timeoutIntervalForResource, 14, accuracy: 0.001)
+    }
+
     func testJWTClaimsExtractChatGPTAccountIdentity() throws {
         let payload: [String: Any] = [
             "email": "demo@example.com",
