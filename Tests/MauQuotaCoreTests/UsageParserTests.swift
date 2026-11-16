@@ -65,4 +65,21 @@ final class UsageParserTests: XCTestCase {
         XCTAssertEqual(QuotaRingState(usage: nil), QuotaRingState(usage: nil))
     }
 
+    func testDirectChatGPTUsageResponseWithSnakeCaseFields() throws {
+        let data = Data(#"{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":21,"limit_window_seconds":18000,"reset_at":1793200000},"secondary_window":{"used_percent":55,"limit_window_seconds":604800,"reset_at":1793800000}}}"#.utf8)
+        let usage = try UsageParser.parseResponse(data)
+        XCTAssertEqual(usage.menuBarTitle, "5h 79% · 7d 45%")
+        XCTAssertEqual(usage.shortWindow?.resetsAt?.timeIntervalSince1970, 1_793_200_000)
+    }
+
+    func testDirectUsageWeeklyOnlyDoesNotInventFiveHourWindow() throws {
+        let data = Data(#"{"rate_limit":{"primary_window":{"used_percent":12,"limit_window_seconds":604800,"reset_at":1793800000},"secondary_window":null}}"#.utf8)
+        let usage = try UsageParser.parseResponse(data)
+        XCTAssertNil(usage.shortWindow)
+        XCTAssertEqual(usage.longWindow?.remainingPercent, 88)
+        XCTAssertEqual(QuotaRingState(usage: usage).weeklyRemaining, 88)
+        XCTAssertNil(QuotaRingState(usage: usage).fiveHourRemaining)
+    }
+
+
 }
