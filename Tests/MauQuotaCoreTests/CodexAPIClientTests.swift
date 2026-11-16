@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import CryptoKit
 @testable import MauQuotaCore
 
 private final class MemoryCredentialStore: CodexCredentialStore {
@@ -79,14 +80,16 @@ final class CodexAPIClientTests: XCTestCase {
         )
     }
 
-    private let usageJSON = Data(#"""{
+    private let usageJSON = Data(#"""
+{
       "account_id":"account-123",
       "plan_type":"plus",
       "rate_limit":{
         "primary_window":{"used_percent":21,"limit_window_seconds":18000,"reset_at":1793200000},
         "secondary_window":{"used_percent":55,"limit_window_seconds":604800,"reset_at":1793800000}
       }
-    }"""#.utf8)
+    }
+    """#.utf8)
 
     func testUnauthenticatedSnapshotIsExplicitlySignedOut() throws {
         let client = makeClient(store: MemoryCredentialStore())
@@ -144,7 +147,8 @@ final class CodexAPIClientTests: XCTestCase {
         StubURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/backend-api/wham/rate-limit-reset-credits")
             XCTAssertEqual(request.value(forHTTPHeaderField: "OpenAI-Beta"), "codex-1")
-            return (200, Data(#"""{
+            return (200, Data(#"""
+{
               "available_count":1,
               "credits":[{
                 "id":"credit-1",
@@ -155,7 +159,8 @@ final class CodexAPIClientTests: XCTestCase {
                 "title":"Full reset",
                 "description":"Restore eligible Codex windows"
               }]
-            }"""#.utf8))
+            }
+            """#.utf8))
         }
 
         let result = try makeClient(store: store).loadResetCredits()
