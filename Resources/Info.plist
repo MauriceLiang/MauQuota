@@ -7,8 +7,8 @@
     <key>CFBundleDisplayName</key><string>MauQuota</string>
     <key>CFBundleExecutable</key><string>MauQuota</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.8.6-preview.5</string>
-    <key>CFBundleVersion</key><string>17</string>
+    <key>CFBundleShortVersionString</key><string>1.8.6-preview.6</string>
+    <key>CFBundleVersion</key><string>18</string>
     <key>MauQuotaBundledAppServerVersion</key><string>0.169.0</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>

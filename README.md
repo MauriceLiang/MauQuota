@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.5-orange">
+  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.6-orange">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -95,6 +95,11 @@ swift test
 核心逻辑（额度解析、进程通信、偏好设置）均有单元测试覆盖。运行测试需要完整 Xcode（命令行工具不含 XCTest）。
 
 ## 版本记录
+
+**v1.8.6-preview.6**
+
+- 重置额度窗口改为居中限宽布局；页面标题、说明、数量、卡片信息和历史记录统一左对齐。
+- 卡片操作按钮保留在行尾，工具栏保持左侧标签切换、右侧刷新；历史页按钮统一左对齐。
 
 **v1.8.6-preview.5**
 

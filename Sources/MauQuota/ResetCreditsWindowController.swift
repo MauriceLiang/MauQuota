@@ -121,14 +121,39 @@ final class ResetCreditsWindowController: NSWindowController {
 
     private func buildInterface() {
         guard let contentView = window?.contentView else { return }
+        // Keep the reading column centered and comfortably narrow on wide windows.
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(container)
+
+        let preferredWidth = container.widthAnchor.constraint(
+            equalTo: contentView.widthAnchor,
+            constant: -56
+        )
+        preferredWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            container.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            container.topAnchor.constraint(equalTo: contentView.topAnchor),
+            container.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            container.widthAnchor.constraint(lessThanOrEqualToConstant: 920),
+            container.widthAnchor.constraint(greaterThanOrEqualToConstant: 520),
+            preferredWidth
+        ])
+
         let root = NSStackView()
         root.orientation = .vertical
-        root.alignment = .width
+        root.alignment = .leading
         root.distribution = .fill
         root.spacing = 16
-        root.edgeInsets = NSEdgeInsets(top: 26, left: 28, bottom: 22, right: 28)
+        root.edgeInsets = NSEdgeInsets(top: 26, left: 0, bottom: 22, right: 0)
         root.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(root)
+        container.addSubview(root)
+        NSLayoutConstraint.activate([
+            root.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            root.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            root.topAnchor.constraint(equalTo: container.topAnchor),
+            root.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
 
         let header = NSStackView()
         header.orientation = .vertical
@@ -143,10 +168,16 @@ final class ResetCreditsWindowController: NSWindowController {
             size: 14, weight: .regular, color: .secondaryLabelColor
         )
         subtitle.maximumNumberOfLines = 2
+        title.alignment = .left
+        subtitle.alignment = .left
         header.addArrangedSubview(title)
         header.addArrangedSubview(subtitle)
         root.addArrangedSubview(header)
-        root.addArrangedSubview(separator())
+        header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+
+        let headerDivider = separator()
+        root.addArrangedSubview(headerDivider)
+        headerDivider.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
 
         let tabRow = NSStackView()
         tabRow.orientation = .horizontal
@@ -165,18 +196,20 @@ final class ResetCreditsWindowController: NSWindowController {
         tabRow.addArrangedSubview(spacer)
         tabRow.addArrangedSubview(refreshButton)
         root.addArrangedSubview(tabRow)
+        tabRow.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
 
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentStack.orientation = .vertical
-        contentStack.alignment = .width
+        contentStack.alignment = .leading
         contentStack.distribution = .fill
         contentStack.spacing = 13
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = contentStack
         root.addArrangedSubview(scrollView)
+        scrollView.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
         scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
         contentStack.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor).isActive = true
 
@@ -187,14 +220,9 @@ final class ResetCreditsWindowController: NSWindowController {
             size: 12, weight: .regular, color: .secondaryLabelColor
         )
         footer.maximumNumberOfLines = 2
+        footer.alignment = .left
         root.addArrangedSubview(footer)
-
-        NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            root.topAnchor.constraint(equalTo: contentView.topAnchor),
-            root.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-         ])
+        footer.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     }
 
     private func reload(preservingStatus: Bool = false) {
@@ -233,7 +261,7 @@ final class ResetCreditsWindowController: NSWindowController {
         clearContent()
 
         if let statusMessage {
-            contentStack.addArrangedSubview(messageRow(statusMessage, color: .secondaryLabelColor))
+            addContent(messageRow(statusMessage, color: .secondaryLabelColor))
         }
 
         switch selectedTab {
@@ -246,21 +274,21 @@ final class ResetCreditsWindowController: NSWindowController {
 
     private func renderAvailable() {
         if isLoading {
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 isChinese ? "正在读取可用重置额度…" : "Loading available resets…",
                 color: .secondaryLabelColor
             ))
             return
         }
         if let loadError {
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 (isChinese ? "读取失败：" : "Could not load resets: ") + loadError,
                 color: .systemRed
             ))
             return
         }
         guard let resetCredits else {
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 isChinese ? "尚未读取重置额度。" : "Reset availability has not been loaded.",
                 color: .secondaryLabelColor
             ))
@@ -280,7 +308,7 @@ final class ResetCreditsWindowController: NSWindowController {
                     ? "存在另一个账号发起的待确认操作。请切换回 \(pending.accountEmail ?? "原账号") 后再处理。"
                     : "A pending reset belongs to another account. Sign back in as \(pending.accountEmail ?? "the original account") to resolve it."
             }
-            contentStack.addArrangedSubview(messageRow(pendingText, color: .systemOrange))
+            addContent(messageRow(pendingText, color: .systemOrange))
             if belongs {
                 let retry = NSButton(
                     title: isChinese ? "安全重试上次操作…" : "Safely retry previous operation…",
@@ -289,19 +317,19 @@ final class ResetCreditsWindowController: NSWindowController {
                 )
                 retry.bezelStyle = .rounded
                 retry.isEnabled = !isConsuming
-                contentStack.addArrangedSubview(retry)
+                addContent(leadingControlRow(retry))
             }
-            contentStack.addArrangedSubview(separator())
+            addContent(separator())
         }
 
         let countTitle = label(
             isChinese ? "可用 \(resetCredits.availableCount) 张重置额度" : "\(resetCredits.availableCount) reset(s) available",
             size: 16, weight: .semibold, color: .labelColor
         )
-        contentStack.addArrangedSubview(countTitle)
+        addContent(countTitle)
 
         guard resetCredits.availableCount > 0 else {
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 isChinese ? "当前没有可用的重置额度。" : "No usage limit resets are currently available.",
                 color: .secondaryLabelColor
             ))
@@ -321,7 +349,7 @@ final class ResetCreditsWindowController: NSWindowController {
         displayedCredits = Array(sorted.prefix(resetCredits.availableCount))
 
         if resetCredits.credits == nil || sorted.isEmpty {
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 isChinese
                     ? "服务只返回了可用数量，没有返回卡片详情。使用时将由官方服务选择下一张可用额度。"
                     : "The service returned the count but no card details. The official service will select the next available reset.",
@@ -335,20 +363,20 @@ final class ResetCreditsWindowController: NSWindowController {
             useNext.tag = -1
             useNext.bezelStyle = .rounded
             useNext.isEnabled = pending == nil && !isConsuming
-            contentStack.addArrangedSubview(useNext)
+            addContent(leadingControlRow(useNext))
             return
         }
 
         for (index, credit) in displayedCredits.enumerated() {
-            contentStack.addArrangedSubview(makeCreditRow(credit, index: index, enabled: pending == nil && !isConsuming))
+            addContent(makeCreditRow(credit, index: index, enabled: pending == nil && !isConsuming))
             if index < displayedCredits.count - 1 {
-                contentStack.addArrangedSubview(separator())
+                addContent(separator())
             }
         }
 
         if displayedCredits.count < resetCredits.availableCount {
             let missing = resetCredits.availableCount - displayedCredits.count
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 isChinese
                     ? "官方服务当前仅返回了 \(displayedCredits.count) 张卡片详情；可用总数为 \(resetCredits.availableCount)，另有 \(missing) 张暂不可单独选择。"
                     : "The service returned details for \(displayedCredits.count) of \(resetCredits.availableCount) available resets. The remaining \(missing) cannot be selected individually yet.",
@@ -356,7 +384,7 @@ final class ResetCreditsWindowController: NSWindowController {
             ))
         }
 
-        contentStack.addArrangedSubview(messageRow(
+        addContent(messageRow(
             isChinese
                 ? "只有至少一项受支持的限额剩余低于 80% 时，重置才会生效；否则卡片会保留。"
                 : "A reset is applied only when at least one covered allowance has less than 80% remaining. Otherwise, the card is kept.",
@@ -369,8 +397,8 @@ final class ResetCreditsWindowController: NSWindowController {
             isChinese ? "MauQuota 本机记录" : "MauQuota local history",
             size: 16, weight: .semibold, color: .labelColor
         )
-        contentStack.addArrangedSubview(heading)
-        contentStack.addArrangedSubview(messageRow(
+        addContent(heading)
+        addContent(messageRow(
             isChinese
                 ? "这里只记录通过 MauQuota 发起并确认成功的重置。其他设备、Codex CLI、自动重置，以及收到但尚未使用的记录不会显示。"
                 : "This list only records resets successfully redeemed through MauQuota. It does not include other devices, Codex CLI, automatic resets, or received-but-unused resets.",
@@ -379,7 +407,7 @@ final class ResetCreditsWindowController: NSWindowController {
 
         let entries = historyStore.entries
         if entries.isEmpty {
-            contentStack.addArrangedSubview(messageRow(
+            addContent(messageRow(
                 isChinese ? "暂无 MauQuota 重置记录。" : "No resets have been redeemed through MauQuota yet.",
                 color: .secondaryLabelColor
             ))
@@ -394,8 +422,8 @@ final class ResetCreditsWindowController: NSWindowController {
                     (isChinese ? "重置成功 · " : "Reset used · ") + formatDate(entry.redeemedAt),
                     size: 13, weight: .regular, color: .secondaryLabelColor
                 ))
-                contentStack.addArrangedSubview(row)
-                if index < entries.count - 1 { contentStack.addArrangedSubview(separator()) }
+                addContent(row)
+                if index < entries.count - 1 { addContent(separator()) }
             }
         }
 
@@ -405,8 +433,8 @@ final class ResetCreditsWindowController: NSWindowController {
             action: #selector(openOfficialHistory(_:))
         )
         official.bezelStyle = .rounded
-        contentStack.addArrangedSubview(official)
-        contentStack.addArrangedSubview(messageRow(
+        addContent(leadingControlRow(official))
+        addContent(messageRow(
             isChinese
                 ? "ChatGPT 官方历史记录覆盖最近 30 天的已收到和已使用记录。"
                 : "ChatGPT's official history includes received and used reset activity from the past 30 days.",
@@ -432,6 +460,7 @@ final class ResetCreditsWindowController: NSWindowController {
         } ?? (isChinese ? "无到期时间" : "Does not expire")
         details.addArrangedSubview(label(expiration, size: 13, weight: .regular, color: .secondaryLabelColor))
         details.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        details.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(details)
 
         let button = NSButton(
@@ -441,6 +470,8 @@ final class ResetCreditsWindowController: NSWindowController {
         )
         button.tag = index
         button.bezelStyle = .rounded
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.isEnabled = enabled
         row.addArrangedSubview(button)
         return row
@@ -579,10 +610,31 @@ final class ResetCreditsWindowController: NSWindowController {
     private func label(_ text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {
         let field = NSTextField(labelWithString: text)
         field.font = .systemFont(ofSize: size, weight: weight)
+        field.alignment = .left
         field.textColor = color
         field.lineBreakMode = .byWordWrapping
         field.maximumNumberOfLines = 0
         return field
+    }
+
+    /// Adds one full-width item to the reading column. Text labels explicitly align left.
+    private func addContent(_ view: NSView) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    /// Keeps intrinsic-size controls on the left without stretching them across the row.
+    private func leadingControlRow(_ control: NSView) -> NSView {
+        let row = NSView()
+        row.addSubview(control)
+        control.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            control.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            control.topAnchor.constraint(equalTo: row.topAnchor),
+            control.bottomAnchor.constraint(equalTo: row.bottomAnchor)
+        ])
+        return row
     }
 
     private func messageRow(_ text: String, color: NSColor) -> NSView {
