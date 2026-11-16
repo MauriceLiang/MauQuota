@@ -163,7 +163,7 @@ final class CodexAPIClientTests: XCTestCase {
         XCTAssertEqual(result.credits?.first?.id, "credit-1")
         XCTAssertEqual(result.credits?.first?.resetType, "codex_rate_limits")
         XCTAssertEqual(result.credits?.first?.title, "Full reset")
-        XCTAssertEqual(result.credits?.first?.expiresAt?.timeIntervalSince1970, 1_765_796_400.123, accuracy: 0.01)
+        XCTAssertEqual(result.credits?.first?.expiresAt?.timeIntervalSince1970 ?? 0, 1_797_336_000.123, accuracy: 0.01)
     }
 
     func testResetCreditsSupportCountWithoutCardDetails() throws {
