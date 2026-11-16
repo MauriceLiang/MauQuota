@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.4-orange">
+  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.5-orange">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -25,6 +25,7 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 - **双环额度指示** —— 外环代表每周剩余额度，内环代表 5 小时剩余额度；每个环根据自身剩余比例变色，百分比也可显示对应颜色。圆环显示和数字着色可分别开关。
 - **独立运行** —— App 内置官方 Codex App Server 原生运行组件，不要求用户预装 Codex CLI、Node.js 或 npm。
 - **官方登录流程** —— 通过内置 Codex App Server 发起 ChatGPT 浏览器授权，应用不请求或读取用户密码。
+- **使用限额重置** —— 查看可用重置额度及到期时间，选择具体卡片并二次确认后使用；成功后自动刷新额度。历史页展示 MauQuota 本机发起的重置，并可跳转查看 ChatGPT 官方完整记录。
 - **按需刷新** —— 预设间隔与 1–120 分钟自定义刷新，睡眠唤醒后自动更新。
 - **隐私优先** —— 只读取额度与账号元数据；诊断信息不包含邮箱、密码或访问令牌。
 - **双语界面** —— 跟随系统、简体中文、English。
@@ -50,8 +51,11 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 MauQuota 不直接调用 OpenAI API，而是以 JSON-RPC 与随应用打包的官方 `codex-app-server --listen stdio://` 通信。当前预览版内置 Codex App Server 运行组件 `0.169.0`，根据 Mac 芯片架构分别打包。用户无需安装 Codex CLI、Node.js 或 npm。
 
 - `account/read` 获取登录状态与账号信息；
-- `account/rateLimits/read` 获取额度窗口，并按窗口时长区分 5 小时与每周额度；
+- `account/rateLimits/read` 获取额度窗口及可用重置额度详情；
+- `account/rateLimitResetCredit/consume` 按卡片 ID 和幂等键执行用户确认的重置；
 - `account/login/start` 打开系统浏览器，由官方 App Server 完成 OAuth 回调。
+
+重置卡历史查询尚未由 App Server 暴露。MauQuota 的历史页只记录通过本应用成功执行的重置；要查看其他设备、自动重置及已收到但未使用的完整记录，可打开 ChatGPT 的 Usage settings。
 
 登录凭据由官方 Codex 运行组件管理，MauQuota 不读取或保存密码、访问令牌。账号元数据和额度仅在内存中用于展示。运行时优先使用 App Bundle 内置版本；若内置文件缺失，则兼容查找系统中已安装的 Codex CLI。
 
@@ -91,6 +95,12 @@ swift test
 核心逻辑（额度解析、进程通信、偏好设置）均有单元测试覆盖。运行测试需要完整 Xcode（命令行工具不含 XCTest）。
 
 ## 版本记录
+
+**v1.8.6-preview.5**
+
+- 新增 Codex 使用限额重置入口：查看可用重置卡、有效期和说明，选择指定卡片并二次确认。
+- 通过官方 App Server 消费重置额度，使用持久化幂等键保护不确定结果的安全重试；成功后刷新额度。
+- 新增 MauQuota 本机重置历史，并提供 ChatGPT 官方完整历史入口。
 
 **v1.8.6-preview.4**
 
