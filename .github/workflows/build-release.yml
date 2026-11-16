@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-\${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
         run: swift test
 
   build:
-    name: Build (\${{ matrix.arch }})
+    name: Build (${{ matrix.arch }})
     needs: test
     strategy:
       fail-fast: false
@@ -36,7 +36,7 @@ jobs:
             arch: arm64
           - runner: macos-15-intel
             arch: x86_64
-    runs-on: \${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -77,15 +77,15 @@ jobs:
           mkdir -p "$STAGING" dist
           ditto "$RUNNER_TEMP/MauQuota.app" "$STAGING/MauQuota.app"
           ln -s /Applications "$STAGING/Applications"
-          DMG="dist/MauQuota-\${VERSION}-macos-\${ARCH}.dmg"
-          hdiutil create -quiet -volname "MauQuota \${VERSION}" \
+          DMG="dist/MauQuota-${VERSION}-macos-${ARCH}.dmg"
+          hdiutil create -quiet -volname "MauQuota ${VERSION}" \
             -srcfolder "$STAGING" -format UDZO -imagekey zlib-level=9 -ov "$DMG"
           hdiutil verify "$DMG"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v7
         with:
-          name: MauQuota-macos-\${{ matrix.arch }}
+          name: MauQuota-macos-${{ matrix.arch }}
           path: dist/*.dmg
           if-no-files-found: error
           retention-days: 14
@@ -108,7 +108,7 @@ jobs:
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
           IS_PRERELEASE=false
           if [[ "$GITHUB_REF" == "refs/heads/feature/native-oauth-direct-api" ]]; then
-            RELEASE_TAG="v\${VERSION}-preview.1"
+            RELEASE_TAG="v${VERSION}-preview.1"
             IS_PRERELEASE=true
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
@@ -118,9 +118,9 @@ jobs:
           else
             RELEASE_TAG="v$VERSION"
           fi
-          TAG_VERSION="\${RELEASE_TAG#v}"
+          TAG_VERSION="${RELEASE_TAG#v}"
           if [[ "$TAG_VERSION" == *-preview.* ]]; then
-            TAG_VERSION="\${TAG_VERSION%%-preview.*}"
+            TAG_VERSION="${TAG_VERSION%%-preview.*}"
           fi
           if [ "$VERSION" != "$TAG_VERSION" ]; then
             echo "Release tag $RELEASE_TAG does not match Info.plist version $VERSION" >&2
@@ -137,14 +137,14 @@ jobs:
 
       - name: Create release
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           (cd artifacts && shasum -a 256 *.dmg > SHA256SUMS)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; skip duplicate creation."
           else
-            NOTES_FILE=".github/release-notes/\${RELEASE_TAG}.md"
+            NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
             if [ "$IS_PRERELEASE" = true ]; then
               if [ -f "$NOTES_FILE" ]; then
                 gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
@@ -165,7 +165,7 @@ jobs:
       - name: Clean up superseded preview releases and branches
         if: env.RELEASE_TAG == 'v1.9.0'
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           FAILED=0
