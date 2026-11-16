@@ -258,10 +258,9 @@ final class CodexAppServerTests: XCTestCase {
         IFS= read -r account
         printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
         IFS= read -r consume
-        case "$consume" in
-          *'account/rateLimitResetCredit/consume'*'credit-1'*'attempt-123'*) ;;
-          *) exit 11 ;;
-        esac
+        printf '%s' "$consume" | grep -q 'account/rateLimitResetCredit/consume' || exit 11
+        printf '%s' "$consume" | grep -q 'credit-1' || exit 12
+        printf '%s' "$consume" | grep -q 'attempt-123' || exit 13
         printf '%s\\n' '{"id":3,"result":{"outcome":"reset"}}'
         """)
         let outcome = try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path)
