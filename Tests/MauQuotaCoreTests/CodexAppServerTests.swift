@@ -216,4 +216,72 @@ final class CodexAppServerTests: XCTestCase {
             XCTAssertEqual(code, 401)
         }
     }
+    func testLoadResetCreditsParsesAvailableCardsAndExpiration() throws {
+        let cli = try makeMock("""
+        IFS= read -r init
+        printf '%s\\n' '{"id":1,"result":{}}'
+        IFS= read -r initialized
+        IFS= read -r account
+        printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
+        IFS= read -r usage
+        printf '%s\\n' '{"id":3,"result":{"rateLimitResetCredits":{"availableCount":2,"credits":[{"id":"credit-1","resetType":"codexRateLimits","status":"available","grantedAt":1794800000,"expiresAt":1797400000,"title":"Full reset","description":"Reset both main Codex allowances"},{"id":"credit-2","resetType":"codexRateLimits","status":"available","grantedAt":1794800100,"expiresAt":null,"title":null,"description":null}]}}}'
+        """)
+        let credits = try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path).loadResetCredits()
+        XCTAssertEqual(credits.availableCount, 2)
+        XCTAssertEqual(credits.credits?.count, 2)
+        XCTAssertEqual(credits.credits?.first?.id, "credit-1")
+        XCTAssertEqual(credits.credits?.first?.title, "Full reset")
+        XCTAssertEqual(credits.credits?.first?.expiresAt?.timeIntervalSince1970, 1797400000)
+        XCTAssertNil(credits.credits?.last?.expiresAt)
+    }
+
+    func testLoadResetCreditsSupportsCountWithoutDetails() throws {
+        let cli = try makeMock("""
+        IFS= read -r init
+        printf '%s\\n' '{"id":1,"result":{}}'
+        IFS= read -r initialized
+        IFS= read -r account
+        printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
+        IFS= read -r usage
+        printf '%s\\n' '{"id":3,"result":{"rateLimitResetCredits":{"availableCount":3,"credits":null}}}'
+        """)
+        let credits = try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path).loadResetCredits()
+        XCTAssertEqual(credits.availableCount, 3)
+        XCTAssertNil(credits.credits)
+    }
+
+    func testConsumeResetCreditUsesSelectedIDAndIdempotencyKey() throws {
+        let cli = try makeMock("""
+        IFS= read -r init
+        printf '%s\\n' '{"id":1,"result":{}}'
+        IFS= read -r initialized
+        IFS= read -r account
+        printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
+        IFS= read -r consume
+        case "$consume" in
+          *'account/rateLimitResetCredit/consume'*'credit-1'*'attempt-123'*) ;;
+          *) exit 11 ;;
+        esac
+        printf '%s\\n' '{"id":3,"result":{"outcome":"reset"}}'
+        """)
+        let outcome = try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path)
+            .consumeResetCredit(creditID: "credit-1", idempotencyKey: "attempt-123")
+        XCTAssertEqual(outcome, .reset)
+    }
+
+    func testConsumeResetCreditRecognizesAlreadyRedeemedAsIdempotentSuccess() throws {
+        let cli = try makeMock("""
+        IFS= read -r init
+        printf '%s\\n' '{"id":1,"result":{}}'
+        IFS= read -r initialized
+        IFS= read -r account
+        printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
+        IFS= read -r consume
+        printf '%s\\n' '{"id":3,"result":{"outcome":"alreadyRedeemed"}}'
+        """)
+        let outcome = try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path)
+            .consumeResetCredit(creditID: nil, idempotencyKey: "attempt-456")
+        XCTAssertEqual(outcome, .alreadyRedeemed)
+    }
+
 }
