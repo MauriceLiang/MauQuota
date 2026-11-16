@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main, "preview/**"]
+    branches: [main]
     tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
@@ -89,8 +89,11 @@ jobs:
           "$APP_SERVER_BINARY" --version
           "$APP_SERVER_BINARY" --help >/dev/null
 
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          export APP_VERSION
           python3 - "$APP_SERVER_BINARY" <<'PY'
           import json
+          import os
           import select
           import subprocess
           import sys
@@ -131,7 +134,7 @@ jobs:
                       "clientInfo": {
                           "name": "mauquota_macos",
                           "title": "MauQuota",
-                          "version": "1.8.6-preview.8",
+                          "version": os.environ["APP_VERSION"],
                       },
                       "capabilities": {},
                   },
@@ -219,7 +222,7 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/heads/preview/') || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.'))
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')
     needs: build
     runs-on: macos-15
     timeout-minutes: 15
@@ -257,11 +260,46 @@ jobs:
         run: |
           set -euo pipefail
           (cd artifacts && shasum -a 256 *.dmg > SHA256SUMS)
-          if [[ "$GITHUB_REF" == refs/heads/preview/* ]]; then
+          NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
+          if [ -f "$NOTES_FILE" ]; then
             gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-              --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG (Preview)" \
-              --generate-notes --prerelease
+              --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
           else
             gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
               --title "MauQuota $RELEASE_TAG" --generate-notes
           fi
+
+
+      - name: Clean up superseded preview releases and branches
+        if: github.ref == 'refs/tags/v1.9.0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          FAILED=0
+
+          PREVIEW_TAGS="$(gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true and (.tagName | contains("-preview."))) | .tagName')"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Removing preview release and tag: $tag"
+            if ! gh release delete "$tag" --cleanup-tag --yes; then
+              echo "Failed to remove preview release: $tag" >&2
+              FAILED=1
+            fi
+          done <<< "$PREVIEW_TAGS"
+
+          PREVIEW_BRANCHES="$(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name | select(startswith("preview/"))')"
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
+            echo "Removing preview branch: $branch"
+            if ! gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch"; then
+              echo "Failed to remove preview branch: $branch" >&2
+              FAILED=1
+            fi
+          done <<< "$PREVIEW_BRANCHES"
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "One or more preview artifacts could not be removed." >&2
+            exit 1
+          fi
+          echo "Preview releases, tags, and branches have been cleaned up."

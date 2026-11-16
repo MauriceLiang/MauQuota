@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.8-orange">
+  <img alt="Version 1.9.0" src="https://img.shields.io/badge/version-1.9.0-2ea44f">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -48,7 +48,7 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 
 ## 工作原理
 
-MauQuota 不直接调用 OpenAI API，而是以 JSON-RPC 与随应用打包的官方 `codex-app-server --listen stdio://` 通信。当前预览版内置 Codex App Server 运行组件 `0.169.0`，根据 Mac 芯片架构分别打包。用户无需安装 Codex CLI、Node.js 或 npm。
+MauQuota 不直接调用 OpenAI API，而是以 JSON-RPC 与随应用打包的官方 `codex-app-server --listen stdio://` 通信。MauQuota 1.9.0 内置官方 Codex App Server 运行组件 `0.169.0`，根据 Mac 芯片架构分别打包。用户无需安装 Codex CLI、Node.js 或 npm。
 
 - `account/read` 获取登录状态与账号信息；
 - `account/rateLimits/read` 获取额度窗口及可用重置额度详情；
@@ -75,7 +75,7 @@ git clone https://github.com/MauriceLiang/MauQuota.git && cd MauQuota && swift r
 
 程序以菜单栏应用方式运行，没有主窗口，也不占用 Dock。图标资源位于 `Resources/`。
 
-仓库的 GitHub Actions 会在 main 与 PR 上运行测试并构建 Apple Silicon / Intel 两种架构的 DMG；推送 `v*` 标签时自动创建 GitHub Release。Release 中的 DMG 为 ad-hoc 签名、未经 Apple 公证，首次运行可能出现 Gatekeeper 提示。
+GitHub Actions 会在 main 与 PR 上运行测试，并分别构建 Apple Silicon（arm64）和 Intel（x86_64）版本的 DMG。推送正式版本标签（如 `v1.9.0`）后，会自动创建 GitHub Release 并附带 SHA-256 校验文件。DMG 为 ad-hoc 签名、未经 Apple 公证，首次运行可能出现 Gatekeeper 提示。
 
 ## 使用
 
@@ -96,44 +96,17 @@ swift test
 
 ## 版本记录
 
-**v1.8.6-preview.8**
+**v1.9.0**
 
-- 修复短内容在 NSScrollView 中因非翻转文档坐标系而贴近底部的问题；文档视图改为顶部原点。
-- 每次重建可用额度或历史记录页面后，将滚动位置重置到顶部。
-
-**v1.8.6-preview.7**
-
-- 修复重置额度页面纵向布局：可用额度和历史记录均从顶部开始连续排列，不再将多余高度分散到内容项之间。
-- 将一次性权益说明放回页面内容流末尾，避免固定在窗口底部造成上下割裂。
-
-**v1.8.6-preview.6**
-
-- 重置额度窗口改为居中限宽布局；页面标题、说明、数量、卡片信息和历史记录统一左对齐。
-- 卡片操作按钮保留在行尾，工具栏保持左侧标签切换、右侧刷新；历史页按钮统一左对齐。
-
-**v1.8.6-preview.5**
-
-- 新增 Codex 使用限额重置入口：查看可用重置卡、有效期和说明，选择指定卡片并二次确认。
-- 通过官方 App Server 消费重置额度，使用持久化幂等键保护不确定结果的安全重试；成功后刷新额度。
-- 新增 MauQuota 本机重置历史，并提供 ChatGPT 官方完整历史入口。
-
-**v1.8.6-preview.4**
-
-- 信息区域改用自定义菜单视图绘制，绕过 AppKit 对禁用菜单项的灰化处理；保持只读且不可点击。
-
-**v1.8.6-preview.3**
-
-- 账号、邮箱、额度和更新时间使用系统标准文字颜色，同时保持真正的只读禁用状态。
-
-**v1.8.6-preview.2**
-
-- 账号、邮箱、额度和更新时间改为正常文字显示，同时保持只读，不响应菜单操作。
-
-**v1.8.6-preview.1**
-
-- 内置官方独立 Codex App Server，不再要求用户安装 Codex CLI、Node.js 或 npm。
-- 登录时同步确认系统浏览器是否成功打开；失败时显示明确错误提示。
-- 诊断信息增加运行组件路径与来源。
+- **独立运行环境**：应用内置官方 Codex App Server 0.169.0，并按 Apple Silicon / Intel 架构分别打包；无需预先安装 Codex CLI、Node.js 或 npm。
+- **官方账号登录**：通过内置 App Server 发起 ChatGPT 浏览器授权，不要求 MauQuota 获取或保存账号密码、访问令牌；登录失败和运行组件异常会提供更明确的诊断信息。
+- **使用限额重置**：新增可用重置额度列表，展示卡片类型、说明和到期时间；可以查看卡片详情、选择指定卡片，并在二次确认后执行重置。
+- **安全重试**：重置请求使用持久化幂等键；遇到结果暂时无法确认的情况，可以安全重试同一请求，避免重复创建重置操作。
+- **重置历史**：新增 MauQuota 本机历史记录，仅记录通过本应用发起且确认成功的重置；同时提供 ChatGPT 官方完整历史入口。
+- **额度自动刷新**：重置成功后自动刷新当前额度。只有至少一项受支持的额度剩余低于 80% 时，重置才会生效；条件不满足时卡片会保留。
+- **菜单信息显示**：账号、邮箱、额度和更新时间等只读信息使用正常文字颜色显示，同时保持不可点击，不再被系统禁用样式过度灰化。
+- **重置窗口布局**：统一采用居中限宽、左对齐的内容布局；可用额度与历史记录从上到下排列，修复窗口空间较大时内容贴近底部的问题，并在刷新或切换页面后回到顶部。
+- **构建与完整性**：CI 对内置官方运行组件校验 SHA-256、检查架构并执行登录 RPC 冒烟测试；正式版提供 arm64 与 x86_64 两种 DMG 及 SHA-256 校验文件。
 
 **v1.8.5**
 
