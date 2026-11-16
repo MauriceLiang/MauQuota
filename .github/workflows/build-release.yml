@@ -222,7 +222,7 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')
+    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 1.9.0'))
     needs: build
     runs-on: macos-15
     timeout-minutes: 15
@@ -263,15 +263,15 @@ jobs:
           NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
           if [ -f "$NOTES_FILE" ]; then
             gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-              --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
+              --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
           else
             gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-              --title "MauQuota $RELEASE_TAG" --generate-notes
+              --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --generate-notes
           fi
 
 
       - name: Clean up superseded preview releases and branches
-        if: github.ref == 'refs/tags/v1.9.0'
+        if: env.RELEASE_TAG == 'v1.9.0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
