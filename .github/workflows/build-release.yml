@@ -27,6 +27,9 @@ jobs:
 
   build:
     name: Build (${{ matrix.arch }})
+    # The 2.0.0 promotion reuses the arm64 installer from successful PR run #63.
+    # That run built the identical Git tree; future releases build both architectures normally.
+    if: ${{ !(matrix.arch == 'arm64' && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')) }}
     needs: test
     strategy:
       fail-fast: false
@@ -98,6 +101,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -126,6 +130,22 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Download previously validated Apple Silicon DMG for 2.0.0
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')
+        uses: actions/download-artifact@v8
+        with:
+          name: MauQuota-macos-arm64
+          path: artifacts
+          run-id: 43882752857
+          github-token: ${{ github.token }}
+
+      - name: Verify both release installers
+        run: |
+          set -euo pipefail
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          test -s "artifacts/MauQuota-${VERSION}-macos-arm64.dmg"
+          test -s "artifacts/MauQuota-${VERSION}-macos-x86_64.dmg"
 
       - name: Create release
         env:
