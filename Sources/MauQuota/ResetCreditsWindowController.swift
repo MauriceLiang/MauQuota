@@ -42,14 +42,14 @@ final class ResetCreditsWindowController: NSWindowController {
         self.onResetSuccess = onResetSuccess
 
         tabs = NSSegmentedControl(
-            labels: [isChinesePlaceholder(language) ? "可用" : "Available",
-                     isChinesePlaceholder(language) ? "历史记录" : "History"],
+            labels: [language == .simplifiedChinese ? "可用" : "Available",
+                     language == .simplifiedChinese ? "历史记录" : "History"],
             trackingMode: .selectOne,
             target: nil,
             action: nil
         )
         refreshButton = NSButton(
-            title: isChinesePlaceholder(language) ? "刷新" : "Refresh",
+            title: language == .simplifiedChinese ? "刷新" : "Refresh",
             target: nil,
             action: nil
         )
@@ -60,7 +60,7 @@ final class ResetCreditsWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = isChinesePlaceholder(language) ? "使用限额重置" : "Usage limit resets"
+        window.title = language == .simplifiedChinese ? "使用限额重置" : "Usage limit resets"
         window.minSize = NSSize(width: 620, height: 460)
         window.center()
         super.init(window: window)
@@ -72,9 +72,6 @@ final class ResetCreditsWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private static func isChinesePlaceholder(_ language: DisplayLanguage) -> Bool {
-        language == .simplifiedChinese
-    }
 
     func present() {
         showWindow(nil)
@@ -126,7 +123,7 @@ final class ResetCreditsWindowController: NSWindowController {
         guard let contentView = window?.contentView else { return }
         let root = NSStackView()
         root.orientation = .vertical
-        root.alignment = .leading
+        root.alignment = .width
         root.distribution = .fill
         root.spacing = 16
         root.edgeInsets = NSEdgeInsets(top: 26, left: 28, bottom: 22, right: 28)
@@ -174,7 +171,7 @@ final class ResetCreditsWindowController: NSWindowController {
         scrollView.borderType = .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentStack.orientation = .vertical
-        contentStack.alignment = .leading
+        contentStack.alignment = .width
         contentStack.distribution = .fill
         contentStack.spacing = 13
         contentStack.translatesAutoresizingMaskIntoConstraints = false
@@ -197,15 +194,14 @@ final class ResetCreditsWindowController: NSWindowController {
             root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             root.topAnchor.constraint(equalTo: contentView.topAnchor),
             root.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            scrollView.widthAnchor.constraint(equalTo: root.widthAnchor)
-        ])
+         ])
     }
 
-    private func reload() {
+    private func reload(preservingStatus: Bool = false) {
         guard !isLoading, !isConsuming else { return }
         isLoading = true
         loadError = nil
-        statusMessage = nil
+        if !preservingStatus { statusMessage = nil }
         render()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -535,19 +531,19 @@ final class ResetCreditsWindowController: NSWindowController {
                         ? "重置已确认成功，正在刷新额度和可用卡片。"
                         : "Reset confirmed. Refreshing usage and available resets."
                     self.onResetSuccess()
-                    self.reload()
+                    self.reload(preservingStatus: true)
                 case .success(.nothingToReset):
                     self.historyStore.clearPendingAttempt()
                     self.statusMessage = self.isChinese
                         ? "当前额度无需重置，重置卡未被消耗。"
                         : "Your usage does not need a reset. The card was not consumed."
-                    self.reload()
+                    self.reload(preservingStatus: true)
                 case .success(.noCredit):
                     self.historyStore.clearPendingAttempt()
                     self.statusMessage = self.isChinese
                         ? "这张重置卡已不可用或已过期，请刷新列表。"
                         : "This reset is no longer available or has expired. Refresh the list."
-                    self.reload()
+                    self.reload(preservingStatus: true)
                 case .failure(let error):
                     // Keep the exact key and credit ID. A retry cannot consume a second card.
                     self.statusMessage = (self.isChinese
