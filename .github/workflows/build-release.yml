@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main, feature/native-oauth-direct-api]
+    branches: [main, feature/customizable-appearance]
     tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
