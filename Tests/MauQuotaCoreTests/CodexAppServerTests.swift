@@ -129,6 +129,23 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertNotNil(snapshot.quotaError)
     }
 
+    func testBundledRuntimeIsUsedWithoutCodexCLIInstalled() throws {
+        let cli = try makeMock("""
+        IFS= read -r init
+        printf '%s\n' '{"id":1,"result":{}}'
+        IFS= read -r initialized
+        IFS= read -r account
+        printf '%s\n' '{"id":2,"result":{"account":null,"requiresOpenaiAuth":true}}'
+        """)
+        let reader = CodexAppServer(timeoutSeconds: 3, bundledCLIExecutable: cli.path)
+
+        XCTAssertEqual(reader.resolvedCLIPath, cli.path)
+        XCTAssertEqual(reader.resolvedCLISource, "bundled")
+        let snapshot = try reader.loadSnapshot()
+        XCTAssertNil(snapshot.account)
+        XCTAssertNil(snapshot.usage)
+    }
+
     func testChatGPTBrowserAuthorizationAndCompletion() throws {
         let cli = try makeMock("""
         IFS= read -r init
@@ -140,7 +157,10 @@ final class CodexAppServerTests: XCTestCase {
         printf '%s\n' '{"method":"account/login/completed","params":{"loginId":"id-123","success":true}}'
         """)
         var opened: URL?
-        try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path).loginWithChatGPT { opened = $0 }
+        try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path).loginWithChatGPT {
+            opened = $0
+            return true
+        }
         XCTAssertEqual(opened?.host, "chatgpt.com")
     }
 
@@ -154,12 +174,30 @@ final class CodexAppServerTests: XCTestCase {
         """)
         XCTAssertThrowsError(try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path).loginWithChatGPT { _ in
             XCTFail("Untrusted URL must not open")
+            return false
         }) { error in
             guard case CodexAppServer.ClientError.loginInvalidURL = error else { return XCTFail("Unexpected: \(error)") }
         }
         XCTAssertTrue(CodexAppServer.isTrustedLoginURL(URL(string: "https://auth.openai.com/codex")!))
         XCTAssertFalse(CodexAppServer.isTrustedLoginURL(URL(string: "http://chatgpt.com/login")!))
         XCTAssertFalse(CodexAppServer.isTrustedLoginURL(URL(string: "https://chatgpt.com.evil.example")!))
+    }
+
+    func testBrowserLaunchFailureIsReported() throws {
+        let cli = try makeMock("""
+        IFS= read -r init
+        printf '%s\n' '{"id":1,"result":{}}'
+        IFS= read -r initialized
+        IFS= read -r login
+        printf '%s\n' '{"id":2,"result":{"type":"chatgpt","loginId":"id-123","authUrl":"https://chatgpt.com/auth"}}'
+        """)
+        XCTAssertThrowsError(try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path).loginWithChatGPT { _ in
+            false
+        }) { error in
+            guard case CodexAppServer.ClientError.browserOpenFailed = error else {
+                return XCTFail("Expected browserOpenFailed, got \(error)")
+            }
+        }
     }
 
     func testRejectedRateLimitResponse() throws {

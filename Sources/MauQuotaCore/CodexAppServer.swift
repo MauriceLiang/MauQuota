@@ -46,12 +46,13 @@ public final class CodexAppServer {
         case loginInvalidURL
         case loginRejected
         case loginFailed
+        case browserOpenFailed
         case requestRejected(Int?)
 
         public var errorDescription: String? {
             switch self {
-            case .missingCLI: return "未找到 Codex CLI，请先安装官方 Codex CLI"
-            case .cannotStart: return "无法启动 Codex CLI，请检查安装位置和权限"
+            case .missingCLI: return "未找到可用的 Codex 运行组件，请重新安装 MauQuota"
+            case .cannotStart: return "无法启动 Codex 运行组件，请检查应用完整性和执行权限"
             case .writeFailed: return "Codex 连接已断开（写入失败）"
             case .readFailed: return "读取 Codex 数据时发生系统错误"
             case .timeout: return "连接超时，请检查网络、登录状态或代理"
@@ -63,6 +64,7 @@ public final class CodexAppServer {
             case .loginInvalidURL: return "Codex 返回了不安全或无效的登录地址"
             case .loginRejected: return "Codex 未提供浏览器登录地址，请更新 CLI"
             case .loginFailed: return "浏览器授权未完成或登录失败，可重新尝试"
+            case .browserOpenFailed: return "无法打开系统浏览器，请检查默认浏览器设置后重试"
             case .requestRejected(let code): return "Codex 拒绝请求（错误码：\(code.map(String.init) ?? "未知")）"
             }
         }
@@ -70,13 +72,18 @@ public final class CodexAppServer {
 
     private let timeoutSeconds: TimeInterval
     private let cliExecutable: String?
+    private let bundledCLIExecutable: String?
 
-    public init(timeoutSeconds: TimeInterval = 30, cliExecutable: String? = nil) {
+    public init(timeoutSeconds: TimeInterval = 30,
+                cliExecutable: String? = nil,
+                bundledCLIExecutable: String? = nil) {
         self.timeoutSeconds = max(0.1, timeoutSeconds)
         self.cliExecutable = cliExecutable
+        self.bundledCLIExecutable = bundledCLIExecutable
     }
 
     public var resolvedCLIPath: String? { findCodex()?.executable }
+    public var resolvedCLISource: String? { findCodex()?.source }
 
     /// Login status and quotas are checked separately: a quota failure will not hide a valid login.
     public func loadSnapshot() throws -> CodexSnapshot {
@@ -118,7 +125,7 @@ public final class CodexAppServer {
 
     /// Browser login: Codex starts a localhost OAuth callback listener and owns all credentials.
     /// `openURL` must hand the URL to a genuine system browser, not an embedded web view.
-    public func loginWithChatGPT(openURL: (URL) -> Void) throws {
+    public func loginWithChatGPT(openURL: (URL) -> Bool) throws {
         try withSession(timeout: timeoutSeconds) { session in
             let response = try session.request(id: 2, method: "account/login/start", params: ["type": "chatgpt"])
             let result = try Self.checkedResult(response)
@@ -129,7 +136,7 @@ public final class CodexAppServer {
                 throw ClientError.loginRejected
             }
             session.extendDeadline(to: 10 * 60)
-            openURL(url)
+            guard openURL(url) else { throw ClientError.browserOpenFailed }
             while true {
                 let notification = try session.nextNotification(method: "account/login/completed")
                 guard let params = notification["params"] as? [String: Any],
@@ -183,7 +190,7 @@ public final class CodexAppServer {
                                    output: stdout.fileHandleForReading,
                                    deadline: ProcessInfo.processInfo.systemUptime + timeout)
         let initResponse = try session.request(id: 1, method: "initialize", params: [
-            "clientInfo": ["name": "mauquota_macos", "title": "MauQuota", "version": "1.8.5"],
+            "clientInfo": ["name": "mauquota_macos", "title": "MauQuota", "version": "1.8.6-preview.1"],
             "capabilities": [:]
         ])
         guard initResponse["result"] is [String: Any] else { throw ClientError.invalidHandshake }
@@ -239,7 +246,7 @@ public final class CodexAppServer {
         try? stdout.fileHandleForReading.close()
     }
 
-    private func findCodex() -> (executable: String, path: String)? {
+    private func findCodex() -> (executable: String, path: String, source: String)? {
         let env = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var directories = (env["PATH"] ?? "").split(separator: ":").map(String.init)
@@ -257,17 +264,34 @@ public final class CodexAppServer {
         }
         var visited = Set<String>()
         directories = directories.filter { visited.insert($0).inserted }
-        let path = directories.joined(separator: ":")
 
         if let cliExecutable, FileManager.default.isExecutableFile(atPath: cliExecutable) {
-            return (cliExecutable, path)
+            return (cliExecutable, directories.joined(separator: ":"), "explicit")
         }
-        // Explicit path can be set for custom installations launched from Finder.
+        // Keep the documented override for advanced users and diagnostics.
         if let explicit = env["CODEXMETER_CODEX_PATH"],
-           FileManager.default.isExecutableFile(atPath: explicit) { return (explicit, path) }
+           FileManager.default.isExecutableFile(atPath: explicit) {
+            return (explicit, directories.joined(separator: ":"), "environment override")
+        }
+
+        // The app bundle ships a matching official Codex CLI runtime. Prefer it so
+        // the quota monitor does not depend on Node.js, npm, or the user's shell PATH.
+        let bundled = bundledCLIExecutable
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/codex").path
+        if FileManager.default.isExecutableFile(atPath: bundled) {
+            let helperDirectory = URL(fileURLWithPath: bundled).deletingLastPathComponent().path
+            let runtimePath = ([helperDirectory] + directories).joined(separator: ":")
+            return (bundled, runtimePath, "bundled")
+        }
+
+        // Retain compatibility with existing Codex CLI installations if the app
+        // bundle is incomplete or a developer is running the app from source.
+        let path = directories.joined(separator: ":")
         for directory in directories {
             let candidate = "\(directory)/codex"
-            if FileManager.default.isExecutableFile(atPath: candidate) { return (candidate, path) }
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return (candidate, path, "system PATH")
+            }
         }
         return nil
     }

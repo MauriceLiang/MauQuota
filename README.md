@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.8.5" src="https://img.shields.io/badge/version-1.8.5-2ea44f">
+  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.1-orange">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -23,7 +23,8 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 
 - **原生轻量** —— Swift + AppKit 编译为单一可执行文件，无 Electron 与 WebView 运行时开销。
 - **双环额度指示** —— 外环代表每周剩余额度，内环代表 5 小时剩余额度；每个环根据自身剩余比例变色，百分比也可显示对应颜色。圆环显示和数字着色可分别开关。
-- **官方登录流程** —— 通过 Codex CLI 的 `app-server` 发起 ChatGPT 浏览器授权，应用不存储密码或令牌。
+- **独立运行** —— App 内置官方 Codex CLI 运行组件，不要求用户预装 Codex CLI、Node.js 或 npm。
+- **官方登录流程** —— 通过内置 Codex App Server 发起 ChatGPT 浏览器授权，应用不请求或读取用户密码。
 - **按需刷新** —— 预设间隔与 1–120 分钟自定义刷新，睡眠唤醒后自动更新。
 - **隐私优先** —— 只读取额度与账号元数据；诊断信息不包含邮箱、密码或访问令牌。
 - **双语界面** —— 跟随系统、简体中文、English。
@@ -46,13 +47,13 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 
 ## 工作原理
 
-MauQuota 不直接调用 OpenAI API，而是以 JSON-RPC 与官方 `codex app-server --stdio` 通信：
+MauQuota 不直接调用 OpenAI API，而是以 JSON-RPC 与随应用打包的官方 `codex app-server --stdio` 通信。当前预览版内置 Codex CLI 运行组件 `0.169.0`，根据 Mac 芯片架构分别打包。用户无需安装 Codex CLI、Node.js 或 npm。
 
 - `account/read` 获取登录状态与账号信息；
 - `account/rateLimits/read` 获取额度窗口，并按窗口时长区分 5 小时与每周额度；
-- `account/login/start` 打开系统浏览器，由 Codex CLI 完成 OAuth 回调。
+- `account/login/start` 打开系统浏览器，由官方运行组件完成 OAuth 回调。
 
-应用不接触凭据，账号信息仅在内存中用于展示，不做持久化。
+登录凭据由官方 Codex 运行组件管理，MauQuota 不读取或保存密码、访问令牌。账号元数据和额度仅在内存中用于展示。运行时优先使用 App Bundle 内置版本；若内置文件缺失，则兼容查找系统中已安装的 Codex CLI。
 
 ## 构建与运行
 
@@ -74,9 +75,9 @@ git clone https://github.com/MauriceLiang/MauQuota.git && cd MauQuota && swift r
 
 ## 使用
 
-1. 安装 Codex CLI：`npm install -g @openai/codex`。
-2. 启动 MauQuota，若尚未登录，从菜单栏选择「使用 ChatGPT 登录…」，在系统浏览器完成官方授权。
-3. 已登录时会直接请求额度；可随时点击「立即刷新」。
+1. 下载并启动 MauQuota（无需单独安装 Codex CLI、Node.js 或 npm）。
+2. 若尚未登录，从菜单栏选择「使用 ChatGPT 登录…」，在系统浏览器完成官方授权。
+3. 授权完成后自动获取额度；可随时点击「立即刷新」。
 4. 查询异常时，使用菜单栏的「复制诊断信息」。
 
 MauQuota 会尝试沿用 macOS 静态系统代理设置；PAC 与仅写在 `.zshrc` 中的代理可能不会被 Finder 启动的应用继承。
@@ -90,6 +91,12 @@ swift test
 核心逻辑（额度解析、进程通信、偏好设置）均有单元测试覆盖。运行测试需要完整 Xcode（命令行工具不含 XCTest）。
 
 ## 版本记录
+
+**v1.8.6-preview.1**
+
+- 内置官方 Codex CLI 运行组件，首次使用不再要求用户安装 Codex CLI。
+- 登录时同步确认系统浏览器是否成功打开；失败时显示明确错误提示。
+- 诊断信息增加运行组件路径与来源。
 
 **v1.8.5**
 
@@ -111,4 +118,4 @@ swift test
 
 ## 许可
 
-[Apache License 2.0](LICENSE)。本项目与 OpenAI 无关联。
+[Apache License 2.0](LICENSE)。随应用分发的官方 Codex CLI 运行组件遵循其上游 [Apache License 2.0](https://github.com/openai/codex/blob/main/LICENSE)，详见 `THIRD_PARTY_NOTICES.md`。本项目与 OpenAI 无关联。
