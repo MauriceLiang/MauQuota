@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/native-oauth-direct-api]
     tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
@@ -11,11 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-\${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  CODEX_APP_SERVER_VERSION: "0.169.0"
 
 jobs:
   test:
@@ -29,7 +26,7 @@ jobs:
         run: swift test
 
   build:
-    name: Build (${{ matrix.arch }})
+    name: Build (\${{ matrix.arch }})
     needs: test
     strategy:
       fail-fast: false
@@ -39,7 +36,7 @@ jobs:
             arch: arm64
           - runner: macos-15-intel
             arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: \${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -48,141 +45,15 @@ jobs:
       - name: Build release binary
         run: swift build --configuration release --product MauQuota
 
-      - name: Fetch official Codex App Server runtime
-        run: |
-          set -euo pipefail
-          case "$(uname -m)" in
-            arm64)
-              TARGET_TRIPLE="aarch64-apple-darwin"
-              EXPECTED_SHA256="86270c0473858bc5a43f139fc1c105b90b4850c4b779103aced907d1ab19e1e4"
-              ;;
-            x86_64)
-              TARGET_TRIPLE="x86_64-apple-darwin"
-              EXPECTED_SHA256="da47277adaf73960a6af1898d35121a230821fd0cd4f3839fb17f21b25e7044e"
-              ;;
-            *)
-              echo "Unsupported runner architecture: $(uname -m)" >&2
-              exit 1
-              ;;
-          esac
-
-          RUNTIME_DIR="$RUNNER_TEMP/codex-app-server"
-          EXTRACT_DIR="$RUNTIME_DIR/extracted"
-          mkdir -p "$EXTRACT_DIR"
-          ASSET="codex-app-server-$TARGET_TRIPLE.tar.gz"
-          curl -fsSL "https://github.com/openai/codex/releases/download/rust-v$CODEX_APP_SERVER_VERSION/$ASSET" -o "$RUNTIME_DIR/$ASSET"
-          echo "$EXPECTED_SHA256  $RUNTIME_DIR/$ASSET" | shasum -a 256 -c -
-          tar -xzf "$RUNTIME_DIR/$ASSET" -C "$EXTRACT_DIR"
-
-          # The upstream archive names the executable after its target triple.
-          APP_SERVER_BINARY="$(find "$EXTRACT_DIR" -type f -print -quit)"
-          if [ -z "$APP_SERVER_BINARY" ]; then
-            echo "Could not find an executable in the official App Server release archive" >&2
-            find "$EXTRACT_DIR" -maxdepth 4 -ls >&2 || true
-            exit 1
-          fi
-          file "$APP_SERVER_BINARY"
-          CODEX_LICENSE="$RUNTIME_DIR/Codex-LICENSE.txt"
-          curl -fsSL "https://raw.githubusercontent.com/openai/codex/rust-v$CODEX_APP_SERVER_VERSION/LICENSE" -o "$CODEX_LICENSE"
-          test -s "$CODEX_LICENSE"
-          chmod 755 "$APP_SERVER_BINARY"
-          "$APP_SERVER_BINARY" --version
-          "$APP_SERVER_BINARY" --help >/dev/null
-
-          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          export APP_VERSION
-          python3 - "$APP_SERVER_BINARY" <<'PY'
-          import json
-          import os
-          import select
-          import subprocess
-          import sys
-          from urllib.parse import urlparse
-
-          process = subprocess.Popen(
-              [sys.argv[1], "--listen", "stdio://"],
-              stdin=subprocess.PIPE,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.DEVNULL,
-              text=True,
-              bufsize=1,
-          )
-
-          def send(message):
-              process.stdin.write(json.dumps(message) + "\n")
-              process.stdin.flush()
-
-          def receive(request_id):
-              while True:
-                  ready, _, _ = select.select([process.stdout], [], [], 20)
-                  if not ready:
-                      raise TimeoutError(f"Codex App Server timed out waiting for response {request_id}")
-                  line = process.stdout.readline()
-                  if not line:
-                      raise RuntimeError("Codex App Server closed stdout unexpectedly")
-                  message = json.loads(line)
-                  if message.get("id") == request_id:
-                      if "error" in message:
-                          raise RuntimeError(f"Codex App Server RPC failed: {message['error']}")
-                      return message.get("result", {})
-
-          try:
-              send({
-                  "id": 1,
-                  "method": "initialize",
-                  "params": {
-                      "clientInfo": {
-                          "name": "mauquota_macos",
-                          "title": "MauQuota",
-                          "version": os.environ["APP_VERSION"],
-                      },
-                      "capabilities": {},
-                  },
-              })
-              receive(1)
-              send({"method": "initialized", "params": {}})
-              send({"id": 2, "method": "account/read", "params": {"refreshToken": False}})
-              account_result = receive(2)
-              if "account" not in account_result:
-                  raise RuntimeError("Codex App Server account/read response has no account field")
-              send({"id": 3, "method": "account/login/start", "params": {"type": "chatgpt"}})
-              login_result = receive(3)
-              auth_url = login_result.get("authUrl", "")
-              auth_host = urlparse(auth_url).hostname or ""
-              trusted_host = (
-                  auth_host == "chatgpt.com"
-                  or auth_host.endswith(".chatgpt.com")
-                  or auth_host == "openai.com"
-                  or auth_host.endswith(".openai.com")
-              )
-              if not auth_url.startswith("https://") or not trusted_host or not login_result.get("loginId"):
-                  raise RuntimeError("Codex App Server account/login/start did not return a valid ChatGPT authorization URL")
-              print("Codex App Server initialize, account/read, and account/login/start smoke tests passed")
-          finally:
-              if process.poll() is None:
-                  process.terminate()
-                  try:
-                      process.wait(timeout=5)
-                  except subprocess.TimeoutExpired:
-                      process.kill()
-                      process.wait()
-          PY
-
-          echo "APP_SERVER_BINARY=$APP_SERVER_BINARY" >> "$GITHUB_ENV"
-          echo "CODEX_LICENSE=$CODEX_LICENSE" >> "$GITHUB_ENV"
-
       - name: Assemble and sign app bundle
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/MauQuota.app"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp Resources/Info.plist "$APP/Contents/Info.plist"
           cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
           cp .build/release/MauQuota "$APP/Contents/MacOS/MauQuota"
-          cp "$APP_SERVER_BINARY" "$APP/Contents/Helpers/codex-app-server"
-          cp "$CODEX_LICENSE" "$APP/Contents/Resources/Codex-LICENSE.txt"
-          chmod 755 "$APP/Contents/MacOS/MauQuota" "$APP/Contents/Helpers/codex-app-server"
-          codesign --force --sign - --timestamp=none "$APP/Contents/Helpers/codex-app-server"
+          chmod 755 "$APP/Contents/MacOS/MauQuota"
           codesign --force --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
@@ -190,13 +61,12 @@ jobs:
         run: |
           set -euo pipefail
           HOST_ARCH="$(uname -m)"
-          for BINARY in "$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota" "$RUNNER_TEMP/MauQuota.app/Contents/Helpers/codex-app-server"; do
-            BINARY_ARCHS="$(lipo -archs "$BINARY")"
-            case " $BINARY_ARCHS " in
-              *" $HOST_ARCH "*) ;;
-              *) echo "Architecture mismatch: host=$HOST_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
-            esac
-          done
+          BINARY="$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota"
+          BINARY_ARCHS="$(lipo -archs "$BINARY")"
+          case " $BINARY_ARCHS " in
+            *" $HOST_ARCH "*) ;;
+            *) echo "Architecture mismatch: host=$HOST_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
+          esac
 
       - name: Create DMG
         run: |
@@ -207,22 +77,22 @@ jobs:
           mkdir -p "$STAGING" dist
           ditto "$RUNNER_TEMP/MauQuota.app" "$STAGING/MauQuota.app"
           ln -s /Applications "$STAGING/Applications"
-          DMG="dist/MauQuota-${VERSION}-macos-${ARCH}.dmg"
-          hdiutil create -quiet -volname "MauQuota ${VERSION}" \
+          DMG="dist/MauQuota-\${VERSION}-macos-\${ARCH}.dmg"
+          hdiutil create -quiet -volname "MauQuota \${VERSION}" \
             -srcfolder "$STAGING" -format UDZO -imagekey zlib-level=9 -ov "$DMG"
           hdiutil verify "$DMG"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v7
         with:
-          name: MauQuota-macos-${{ matrix.arch }}
+          name: MauQuota-macos-\${{ matrix.arch }}
           path: dist/*.dmg
           if-no-files-found: error
           retention-days: 14
 
   release:
     name: Release
-    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 1.9.0'))
+    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 1.9.0')) || github.ref == 'refs/heads/feature/native-oauth-direct-api'
     needs: build
     runs-on: macos-15
     timeout-minutes: 15
@@ -232,21 +102,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Verify tag matches Info.plist
+      - name: Determine release tag and verify version
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          IS_PRERELEASE=false
+          if [[ "$GITHUB_REF" == "refs/heads/feature/native-oauth-direct-api" ]]; then
+            RELEASE_TAG="v\${VERSION}-preview.1"
+            IS_PRERELEASE=true
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
+            if [[ "$RELEASE_TAG" == *-preview.* ]]; then
+              IS_PRERELEASE=true
+            fi
           else
             RELEASE_TAG="v$VERSION"
           fi
-          TAG_VERSION="${RELEASE_TAG#v}"
+          TAG_VERSION="\${RELEASE_TAG#v}"
+          if [[ "$TAG_VERSION" == *-preview.* ]]; then
+            TAG_VERSION="\${TAG_VERSION%%-preview.*}"
+          fi
           if [ "$VERSION" != "$TAG_VERSION" ]; then
             echo "Release tag $RELEASE_TAG does not match Info.plist version $VERSION" >&2
             exit 1
           fi
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "IS_PRERELEASE=$IS_PRERELEASE" >> "$GITHUB_ENV"
 
       - name: Download DMGs
         uses: actions/download-artifact@v8
@@ -256,15 +137,23 @@ jobs:
 
       - name: Create release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: \${{ github.token }}
         run: |
           set -euo pipefail
           (cd artifacts && shasum -a 256 *.dmg > SHA256SUMS)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; skip duplicate creation."
           else
-            NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
-            if [ -f "$NOTES_FILE" ]; then
+            NOTES_FILE=".github/release-notes/\${RELEASE_TAG}.md"
+            if [ "$IS_PRERELEASE" = true ]; then
+              if [ -f "$NOTES_FILE" ]; then
+                gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
+                  --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE" --prerelease
+              else
+                gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
+                  --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --generate-notes --prerelease
+              fi
+            elif [ -f "$NOTES_FILE" ]; then
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
                 --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
             else
@@ -273,11 +162,10 @@ jobs:
             fi
           fi
 
-
       - name: Clean up superseded preview releases and branches
         if: env.RELEASE_TAG == 'v1.9.0'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: \${{ github.token }}
         run: |
           set -euo pipefail
           FAILED=0
