@@ -78,10 +78,6 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
 
-    /// Informational menu rows use an enabled no-op action so AppKit renders
-    /// them with normal label colors without making them actionable.
-    @objc private func informationalItemClicked(_ sender: Any?) {}
-
     @objc private func coloredRingToggled(_ sender: Any?) {
         appearanceSettings.showsColoredRing.toggle()
         drawMenu() // UI-only change; no quota request.
@@ -459,13 +455,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     private func addInformationalItem(_ title: String, to menu: NSMenu) {
-        let item = NSMenuItem(
-            title: title,
-            action: #selector(informationalItemClicked(_:)),
-            keyEquivalent: ""
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [.foregroundColor: NSColor.labelColor]
         )
-        item.target = self
-        item.isEnabled = true
+        item.isEnabled = false
         menu.addItem(item)
     }
 
