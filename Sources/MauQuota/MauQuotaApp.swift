@@ -456,10 +456,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
 
     private func addInformationalItem(_ title: String, to menu: NSMenu) {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [.foregroundColor: NSColor.labelColor]
-        )
+        item.view = InformationalMenuItemView(title: title, font: menu.font)
         item.isEnabled = false
         menu.addItem(item)
     }
@@ -475,6 +472,43 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             reset = formatter.string(from: resetsAt)
         } else { reset = tr(.notProvided) }
         addInformationalItem("    \(tr(.resetAt))\(reset)", to: menu)
+    }
+}
+
+/// A menu row that draws its own text, bypassing AppKit's disabled-item dimming.
+private final class InformationalMenuItemView: NSView {
+    init(title: String, font: NSFont) {
+        let label = NSTextField(labelWithString: title)
+        label.font = font
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.isEditable = false
+        label.isSelectable = false
+        label.drawsBackground = false
+        label.sizeToFit()
+
+        let rowHeight: CGFloat = 28
+        let leadingInset: CGFloat = 30
+        let trailingInset: CGFloat = 12
+        super.init(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: leadingInset + label.frame.width + trailingInset,
+            height: rowHeight
+        ))
+
+        // Let AppKit expand the view to the menu's full content width.
+        autoresizingMask = [.width]
+        label.frame.origin = NSPoint(
+            x: leadingInset,
+            y: (rowHeight - label.frame.height) / 2
+        )
+        label.autoresizingMask = [.width]
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
