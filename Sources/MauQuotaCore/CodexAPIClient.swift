@@ -337,6 +337,7 @@ public final class CodexAPIClient {
     private let timeoutSeconds: TimeInterval
     private let session: URLSession
     private let credentialStore: CodexCredentialStore
+    private let requestObserver: ((URLRequest) -> Void)?
     private let refreshLock = NSLock()
     private let baseURL = URL(string: "https://chatgpt.com/backend-api/")!
 
@@ -344,14 +345,17 @@ public final class CodexAPIClient {
         self.timeoutSeconds = max(1, timeoutSeconds)
         self.session = .shared
         self.credentialStore = KeychainCredentialStore()
+        self.requestObserver = nil
     }
 
     init(timeoutSeconds: TimeInterval = 25,
          session: URLSession,
-         credentialStore: CodexCredentialStore) {
+         credentialStore: CodexCredentialStore,
+         requestObserver: ((URLRequest) -> Void)? = nil) {
         self.timeoutSeconds = max(1, timeoutSeconds)
         self.session = session
         self.credentialStore = credentialStore
+        self.requestObserver = requestObserver
     }
 
     public var hasStoredCredentials: Bool {
@@ -537,6 +541,7 @@ public final class CodexAPIClient {
     }
 
     private func perform(_ request: URLRequest) throws -> Data {
+        requestObserver?(request)
         let semaphore = DispatchSemaphore(value: 0)
         var receivedData: Data?
         var receivedResponse: URLResponse?
