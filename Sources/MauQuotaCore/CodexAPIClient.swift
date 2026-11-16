@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import Network
 import Security
+import Darwin
 
 public struct CodexAccount: Equatable {
     public let type: String
@@ -380,8 +381,8 @@ public final class CodexAPIClient {
         let pkce = CodexOAuthCore.pkcePair()
         let state = CodexOAuthCore.randomURLSafeString(byteCount: 32)
         let callbackServer = try OAuthCallbackServer(port: CodexOAuthCore.callbackPort, expectedState: state)
-        try callbackServer.start()
         defer { callbackServer.stop() }
+        try callbackServer.start()
 
         let url = CodexOAuthCore.authorizationURL(challenge: pkce.challenge, state: state)
         guard openURL(url) else { throw ClientError.browserOpenFailed }
@@ -444,7 +445,7 @@ public final class CodexAPIClient {
     }
 
     private func exchangeAuthorizationCode(_ code: String, verifier: String) throws -> OAuthTokenResponse {
-        var request = URLRequest(url: CodexOAuthCore.issuer.appendingPathComponent("oauth/token"))
+        var request = URLRequest(url: URL(string: "oauth/token", relativeTo: CodexOAuthCore.issuer)!.absoluteURL)
         request.httpMethod = "POST"
         request.timeoutInterval = timeoutSeconds
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -507,7 +508,7 @@ public final class CodexAPIClient {
                                          method: String,
                                          body: Data?,
                                          credentials: CodexOAuthCredentials) -> URLRequest {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        var request = URLRequest(url: URL(string: path, relativeTo: baseURL)!.absoluteURL)
         request.httpMethod = method
         request.timeoutInterval = timeoutSeconds
         request.cachePolicy = .reloadIgnoringLocalCacheData
