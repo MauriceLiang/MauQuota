@@ -147,7 +147,7 @@ jobs:
           fi
 
       - name: Clean up superseded preview releases and branches
-        if: env.RELEASE_TAG == 'v2.0.0'
+        if: (github.ref == 'refs/tags/v2.0.0') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
