@@ -342,10 +342,28 @@ public final class CodexAPIClient {
     private let baseURL = URL(string: "https://chatgpt.com/backend-api/")!
 
     public init(timeoutSeconds: TimeInterval = 25) {
-        self.timeoutSeconds = max(1, timeoutSeconds)
-        self.session = .shared
+        let timeout = max(1, timeoutSeconds)
+        self.timeoutSeconds = timeout
+        self.session = URLSession(
+            configuration: Self.makeSessionConfiguration(timeoutSeconds: timeout)
+        )
         self.credentialStore = KeychainCredentialStore()
         self.requestObserver = nil
+    }
+
+    /// Creates a session for a token-based API client. MauQuota does not use
+    /// cookies, HTTP authentication caches, or response caching.
+    static func makeSessionConfiguration(timeoutSeconds: TimeInterval) -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        configuration.httpMaximumConnectionsPerHost = 2
+        configuration.timeoutIntervalForRequest = max(1, timeoutSeconds)
+        configuration.timeoutIntervalForResource = max(3, timeoutSeconds + 2)
+        return configuration
     }
 
     init(timeoutSeconds: TimeInterval = 25,
@@ -364,6 +382,12 @@ public final class CodexAPIClient {
 
     public func logout() throws {
         try credentialStore.delete()
+    }
+
+    /// Cancels outstanding requests and releases this client's session resources.
+    /// Called when the menu bar application is terminating.
+    public func invalidateSession() {
+        session.invalidateAndCancel()
     }
 
     public func loadSnapshot() throws -> CodexSnapshot {
