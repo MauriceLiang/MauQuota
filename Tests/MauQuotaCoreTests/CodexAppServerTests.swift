@@ -137,10 +137,10 @@ final class CodexAppServerTests: XCTestCase {
         IFS= read -r account
         printf '%s\n' '{"id":2,"result":{"account":null,"requiresOpenaiAuth":true}}'
         """)
-        let reader = CodexAppServer(timeoutSeconds: 3, bundledCLIExecutable: cli.path)
+        let reader = CodexAppServer(timeoutSeconds: 3, bundledAppServerExecutable: cli.path)
 
-        XCTAssertEqual(reader.resolvedCLIPath, cli.path)
-        XCTAssertEqual(reader.resolvedCLISource, "bundled")
+        XCTAssertEqual(reader.resolvedRuntimePath, cli.path)
+        XCTAssertEqual(reader.resolvedRuntimeSource, "bundled")
         let snapshot = try reader.loadSnapshot()
         XCTAssertNil(snapshot.account)
         XCTAssertNil(snapshot.usage)

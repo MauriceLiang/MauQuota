@@ -33,7 +33,7 @@ public struct CodexSnapshot {
 /// The app neither requests passwords nor handles tokens.
 public final class CodexAppServer {
     public enum ClientError: LocalizedError {
-        case missingCLI
+        case missingRuntime
         case cannotStart
         case writeFailed
         case readFailed
@@ -51,12 +51,12 @@ public final class CodexAppServer {
 
         public var errorDescription: String? {
             switch self {
-            case .missingCLI: return "未找到可用的 Codex 运行组件，请重新安装 MauQuota"
+            case .missingRuntime: return "未找到可用的 Codex App Server 运行组件，请重新安装 MauQuota"
             case .cannotStart: return "无法启动 Codex 运行组件，请检查应用完整性和执行权限"
             case .writeFailed: return "Codex 连接已断开（写入失败）"
             case .readFailed: return "读取 Codex 数据时发生系统错误"
             case .timeout: return "连接超时，请检查网络、登录状态或代理"
-            case .unexpectedEOF: return "Codex 运行组件提前退出（可能是版本或运行环境问题）"
+            case .unexpectedEOF: return "Codex App Server 提前退出（可能是版本或运行环境问题）"
             case .oversizedResponse: return "Codex 返回的数据过大"
             case .invalidHandshake: return "Codex 初始化失败，请更新 MauQuota"
             case .invalidResponse: return "Codex 返回了不兼容的账号数据"
@@ -72,18 +72,18 @@ public final class CodexAppServer {
 
     private let timeoutSeconds: TimeInterval
     private let cliExecutable: String?
-    private let bundledCLIExecutable: String?
+    private let bundledAppServerExecutable: String?
 
     public init(timeoutSeconds: TimeInterval = 30,
                 cliExecutable: String? = nil,
-                bundledCLIExecutable: String? = nil) {
+                bundledAppServerExecutable: String? = nil) {
         self.timeoutSeconds = max(0.1, timeoutSeconds)
         self.cliExecutable = cliExecutable
-        self.bundledCLIExecutable = bundledCLIExecutable
+        self.bundledAppServerExecutable = bundledAppServerExecutable
     }
 
-    public var resolvedCLIPath: String? { findCodex()?.executable }
-    public var resolvedCLISource: String? { findCodex()?.source }
+    public var resolvedRuntimePath: String? { findRuntime()?.executable }
+    public var resolvedRuntimeSource: String? { findRuntime()?.source }
 
     /// Login status and quotas are checked separately: a quota failure will not hide a valid login.
     public func loadSnapshot() throws -> CodexSnapshot {
@@ -168,10 +168,10 @@ public final class CodexAppServer {
     }
 
     private func withSession<T>(timeout: TimeInterval, body: (CodexSession) throws -> T) throws -> T {
-        guard let resolved = findCodex() else { throw ClientError.missingCLI }
+        guard let resolved = findRuntime() else { throw ClientError.missingRuntime }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: resolved.executable)
-        process.arguments = ["app-server", "--stdio"]
+        process.arguments = resolved.arguments
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = resolved.path
         Self.applyMacOSSystemProxy(to: &environment)
@@ -246,7 +246,7 @@ public final class CodexAppServer {
         try? stdout.fileHandleForReading.close()
     }
 
-    private func findCodex() -> (executable: String, path: String, source: String)? {
+    private func findRuntime() -> (executable: String, path: String, source: String, arguments: [String])? {
         let env = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var directories = (env["PATH"] ?? "").split(separator: ":").map(String.init)
@@ -266,31 +266,28 @@ public final class CodexAppServer {
         directories = directories.filter { visited.insert($0).inserted }
 
         if let cliExecutable, FileManager.default.isExecutableFile(atPath: cliExecutable) {
-            return (cliExecutable, directories.joined(separator: ":"), "explicit")
+            return (cliExecutable, directories.joined(separator: ":"), "explicit Codex CLI", ["app-server", "--stdio"])
         }
-        // Keep the documented override for advanced users and diagnostics.
         if let explicit = env["CODEXMETER_CODEX_PATH"],
            FileManager.default.isExecutableFile(atPath: explicit) {
-            return (explicit, directories.joined(separator: ":"), "environment override")
+            return (explicit, directories.joined(separator: ":"), "environment override", ["app-server", "--stdio"])
         }
 
-        // The app bundle ships a matching official Codex CLI runtime. Prefer it so
-        // the quota monitor does not depend on Node.js, npm, or the user's shell PATH.
-        let bundled = bundledCLIExecutable
-            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/codex").path
+        // Prefer the official standalone App Server binary bundled in MauQuota.
+        let bundled = bundledAppServerExecutable
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/codex-app-server").path
         if FileManager.default.isExecutableFile(atPath: bundled) {
             let helperDirectory = URL(fileURLWithPath: bundled).deletingLastPathComponent().path
             let runtimePath = ([helperDirectory] + directories).joined(separator: ":")
-            return (bundled, runtimePath, "bundled")
+            return (bundled, runtimePath, "bundled App Server", ["--listen", "stdio://"])
         }
 
-        // Retain compatibility with existing Codex CLI installations if the app
-        // bundle is incomplete or a developer is running the app from source.
+        // Retain compatibility with existing Codex CLI installations.
         let path = directories.joined(separator: ":")
         for directory in directories {
             let candidate = "\(directory)/codex"
             if FileManager.default.isExecutableFile(atPath: candidate) {
-                return (candidate, path, "system PATH")
+                return (candidate, path, "system Codex CLI", ["app-server", "--stdio"])
             }
         }
         return nil

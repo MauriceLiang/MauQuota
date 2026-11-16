@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CODEX_CLI_VERSION: "0.169.0"
+  CODEX_APP_SERVER_VERSION: "0.169.0"
 
 jobs:
   test:
@@ -48,17 +48,17 @@ jobs:
       - name: Build release binary
         run: swift build --configuration release --product MauQuota
 
-      - name: Fetch official Codex runtime
+      - name: Fetch official Codex App Server runtime
         run: |
           set -euo pipefail
           case "$(uname -m)" in
             arm64)
-              NPM_PLATFORM="darwin-arm64"
               TARGET_TRIPLE="aarch64-apple-darwin"
+              EXPECTED_SHA256="86270c0473858bc5a43f139fc1c105b90b4850c4b779103aced907d1ab19e1e4"
               ;;
             x86_64)
-              NPM_PLATFORM="darwin-x64"
               TARGET_TRIPLE="x86_64-apple-darwin"
+              EXPECTED_SHA256="da47277adaf73960a6af1898d35121a230821fd0cd4f3839fb17f21b25e7044e"
               ;;
             *)
               echo "Unsupported runner architecture: $(uname -m)" >&2
@@ -66,37 +66,35 @@ jobs:
               ;;
           esac
 
-          RUNTIME_DIR="$RUNNER_TEMP/codex-runtime"
-          mkdir -p "$RUNTIME_DIR"
-          npm pack "@openai/codex@$CODEX_CLI_VERSION-$NPM_PLATFORM" --pack-destination "$RUNTIME_DIR"
-          ARCHIVE="$(find "$RUNTIME_DIR" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
-          test -n "$ARCHIVE"
-          tar -xzf "$ARCHIVE" -C "$RUNTIME_DIR"
+          RUNTIME_DIR="$RUNNER_TEMP/codex-app-server"
+          EXTRACT_DIR="$RUNTIME_DIR/extracted"
+          mkdir -p "$EXTRACT_DIR"
+          ASSET="codex-app-server-$TARGET_TRIPLE.tar.gz"
+          curl -fsSL "https://github.com/openai/codex/releases/download/rust-v$CODEX_APP_SERVER_VERSION/$ASSET" -o "$RUNTIME_DIR/$ASSET"
+          echo "$EXPECTED_SHA256  $RUNTIME_DIR/$ASSET" | shasum -a 256 -c -
+          tar -xzf "$RUNTIME_DIR/$ASSET" -C "$EXTRACT_DIR"
 
-          PACKAGE_ROOT="$RUNTIME_DIR/package"
-          CODEX_BINARY="$(find "$PACKAGE_ROOT/vendor/$TARGET_TRIPLE" -type f -name codex -print -quit)"
-          if [ -z "$CODEX_BINARY" ]; then
-            echo "Could not find the official Codex binary for $TARGET_TRIPLE" >&2
-            find "$PACKAGE_ROOT/vendor" -maxdepth 5 -type f -print >&2 || true
+          APP_SERVER_BINARY="$(find "$EXTRACT_DIR" -type f -name codex-app-server -print -quit)"
+          if [ -z "$APP_SERVER_BINARY" ]; then
+            echo "Could not find codex-app-server in the official release archive" >&2
+            find "$EXTRACT_DIR" -maxdepth 4 -type f -print >&2 || true
             exit 1
           fi
-          # Fetch the exact upstream license for the pinned Codex release.
           CODEX_LICENSE="$RUNTIME_DIR/Codex-LICENSE.txt"
-          curl -fsSL "https://raw.githubusercontent.com/openai/codex/rust-v$CODEX_CLI_VERSION/LICENSE" -o "$CODEX_LICENSE"
+          curl -fsSL "https://raw.githubusercontent.com/openai/codex/rust-v$CODEX_APP_SERVER_VERSION/LICENSE" -o "$CODEX_LICENSE"
           test -s "$CODEX_LICENSE"
-          chmod 755 "$CODEX_BINARY"
-          "$CODEX_BINARY" --version
-          "$CODEX_BINARY" app-server --help >/dev/null
+          chmod 755 "$APP_SERVER_BINARY"
+          "$APP_SERVER_BINARY" --version
+          "$APP_SERVER_BINARY" --help >/dev/null
 
-          # Smoke-test the exact RPCs MauQuota needs before packaging the helper.
-          python3 - "$CODEX_BINARY" <<'PY'
+          python3 - "$APP_SERVER_BINARY" <<'PY'
           import json
           import select
           import subprocess
           import sys
 
           process = subprocess.Popen(
-              [sys.argv[1], "app-server", "--stdio"],
+              [sys.argv[1], "--listen", "stdio://"],
               stdin=subprocess.PIPE,
               stdout=subprocess.PIPE,
               stderr=subprocess.PIPE,
@@ -112,14 +110,14 @@ jobs:
               while True:
                   ready, _, _ = select.select([process.stdout], [], [], 20)
                   if not ready:
-                      raise TimeoutError(f"Codex app-server timed out waiting for response {request_id}")
+                      raise TimeoutError(f"Codex App Server timed out waiting for response {request_id}")
                   line = process.stdout.readline()
                   if not line:
-                      raise RuntimeError("Codex app-server closed stdout unexpectedly")
+                      raise RuntimeError("Codex App Server closed stdout unexpectedly")
                   message = json.loads(line)
                   if message.get("id") == request_id:
                       if "error" in message:
-                          raise RuntimeError(f"Codex app-server RPC failed: {message['error']}")
+                          raise RuntimeError(f"Codex App Server RPC failed: {message['error']}")
                       return message.get("result", {})
 
           try:
@@ -140,8 +138,8 @@ jobs:
               send({"id": 2, "method": "account/read", "params": {"refreshToken": False}})
               account_result = receive(2)
               if "account" not in account_result:
-                  raise RuntimeError("Codex app-server account/read response has no account field")
-              print("Codex app-server initialize and account/read smoke test passed")
+                  raise RuntimeError("Codex App Server account/read response has no account field")
+              print("Codex App Server initialize and account/read smoke test passed")
           finally:
               if process.poll() is None:
                   process.terminate()
@@ -152,7 +150,7 @@ jobs:
                       process.wait()
           PY
 
-          echo "CODEX_BINARY=$CODEX_BINARY" >> "$GITHUB_ENV"
+          echo "APP_SERVER_BINARY=$APP_SERVER_BINARY" >> "$GITHUB_ENV"
           echo "CODEX_LICENSE=$CODEX_LICENSE" >> "$GITHUB_ENV"
 
       - name: Assemble and sign app bundle
@@ -163,10 +161,10 @@ jobs:
           cp Resources/Info.plist "$APP/Contents/Info.plist"
           cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
           cp .build/release/MauQuota "$APP/Contents/MacOS/MauQuota"
-          cp "$CODEX_BINARY" "$APP/Contents/Helpers/codex"
+          cp "$APP_SERVER_BINARY" "$APP/Contents/Helpers/codex-app-server"
           cp "$CODEX_LICENSE" "$APP/Contents/Resources/Codex-LICENSE.txt"
-          chmod 755 "$APP/Contents/MacOS/MauQuota" "$APP/Contents/Helpers/codex"
-          codesign --force --sign - --timestamp=none "$APP/Contents/Helpers/codex"
+          chmod 755 "$APP/Contents/MacOS/MauQuota" "$APP/Contents/Helpers/codex-app-server"
+          codesign --force --sign - --timestamp=none "$APP/Contents/Helpers/codex-app-server"
           codesign --force --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
@@ -174,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           HOST_ARCH="$(uname -m)"
-          for BINARY in "$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota" "$RUNNER_TEMP/MauQuota.app/Contents/Helpers/codex"; do
+          for BINARY in "$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota" "$RUNNER_TEMP/MauQuota.app/Contents/Helpers/codex-app-server"; do
             BINARY_ARCHS="$(lipo -archs "$BINARY")"
             case " $BINARY_ARCHS " in
               *" $HOST_ARCH "*) ;;

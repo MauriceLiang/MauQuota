@@ -139,14 +139,14 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func copyDiagnosisClicked(_ sender: Any?) {
-        let path = reader.resolvedCLIPath ?? (activeLanguage == .english ? "Not found" : "未找到")
-        let source = reader.resolvedCLISource ?? (activeLanguage == .english ? "Unavailable" : "不可用")
+        let path = reader.resolvedRuntimePath ?? (activeLanguage == .english ? "Not found" : "未找到")
+        let source = reader.resolvedRuntimeSource ?? (activeLanguage == .english ? "Unavailable" : "不可用")
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out / unknown" : "未登录/未知") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
         let issue = displayedError() ?? (activeLanguage == .english ? "None" : "无")
         let diagnostic = """
         MauQuota v\(appVersion)
-        Codex runtime: \(path)
+        Codex App Server: \(path)
         Codex runtime source: \(source)
         \(tr(.account))\(login)
         \(tr(.refreshInterval)): \(preferences.refreshIntervalMinutes) min
