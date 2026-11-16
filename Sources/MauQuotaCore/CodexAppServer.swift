@@ -184,8 +184,7 @@ public final class CodexAppServer {
                   account["type"] as? String == "chatgpt" else {
                 throw ClientError.chatGPTAuthRequired
             }
-            var params: [String: Any] = ["idempotencyKey": idempotencyKey]
-            if let creditID { params["creditId"] = creditID }
+            let params = Self.resetConsumeParams(creditID: creditID, idempotencyKey: idempotencyKey)
             let response = try session.request(
                 id: 3, method: "account/rateLimitResetCredit/consume", params: params
             )
@@ -232,6 +231,12 @@ public final class CodexAppServer {
         guard let raw = try? JSONSerialization.data(withJSONObject: response),
               let usage = try? UsageParser.parseResponse(raw) else { throw ClientError.rateLimitUnavailable }
         return usage
+    }
+
+    static func resetConsumeParams(creditID: String?, idempotencyKey: String) -> [String: Any] {
+        var params: [String: Any] = ["idempotencyKey": idempotencyKey]
+        if let creditID { params["creditId"] = creditID }
+        return params
     }
 
     private static func parseResetCredits(_ response: [String: Any]) throws -> CodexResetCredits {

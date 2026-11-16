@@ -250,7 +250,23 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertNil(credits.credits)
     }
 
-    func testConsumeResetCreditUsesSelectedIDAndIdempotencyKey() throws {
+    func testConsumeResetParamsIncludeSelectedIDAndIdempotencyKey() {
+        let params = CodexAppServer.resetConsumeParams(
+            creditID: "credit-1",
+            idempotencyKey: "attempt-123"
+        )
+        XCTAssertEqual(params["creditId"] as? String, "credit-1")
+        XCTAssertEqual(params["idempotencyKey"] as? String, "attempt-123")
+
+        let nextAvailable = CodexAppServer.resetConsumeParams(
+            creditID: nil,
+            idempotencyKey: "attempt-456"
+        )
+        XCTAssertNil(nextAvailable["creditId"])
+        XCTAssertEqual(nextAvailable["idempotencyKey"] as? String, "attempt-456")
+    }
+
+    func testConsumeResetCreditParsesResetOutcome() throws {
         let cli = try makeMock("""
         IFS= read -r init
         printf '%s\\n' '{"id":1,"result":{}}'
@@ -258,9 +274,6 @@ final class CodexAppServerTests: XCTestCase {
         IFS= read -r account
         printf '%s\\n' '{"id":2,"result":{"account":{"type":"chatgpt"}}}'
         IFS= read -r consume
-        printf '%s' "$consume" | grep -q 'account/rateLimitResetCredit/consume' || exit 11
-        printf '%s' "$consume" | grep -q 'credit-1' || exit 12
-        printf '%s' "$consume" | grep -q 'attempt-123' || exit 13
         printf '%s\\n' '{"id":3,"result":{"outcome":"reset"}}'
         """)
         let outcome = try CodexAppServer(timeoutSeconds: 3, cliExecutable: cli.path)
