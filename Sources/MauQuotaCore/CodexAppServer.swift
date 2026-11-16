@@ -29,6 +29,30 @@ public struct CodexSnapshot {
     public let quotaError: String?
 }
 
+/// A banked Codex usage reset returned by the official App Server.
+public struct CodexResetCredit: Equatable, Identifiable {
+    public let id: String
+    public let resetType: String
+    public let status: String
+    public let grantedAt: Date
+    public let expiresAt: Date?
+    public let title: String?
+    public let description: String?
+}
+
+/// A nil credits array means the service returned only the authoritative count.
+public struct CodexResetCredits: Equatable {
+    public let availableCount: Int
+    public let credits: [CodexResetCredit]?
+}
+
+public enum CodexResetConsumeOutcome: String, Equatable {
+    case reset
+    case alreadyRedeemed
+    case nothingToReset
+    case noCredit
+}
+
 /// Uses Codex's supported browser OAuth flow and its app-server account/usage RPCs.
 /// The app neither requests passwords nor handles tokens.
 public final class CodexAppServer {
@@ -48,6 +72,8 @@ public final class CodexAppServer {
         case loginFailed
         case browserOpenFailed
         case requestRejected(Int?)
+        case chatGPTAuthRequired
+        case resetCreditsUnavailable
 
         public var errorDescription: String? {
             switch self {
@@ -66,6 +92,8 @@ public final class CodexAppServer {
             case .loginFailed: return "浏览器授权未完成或登录失败，可重新尝试"
             case .browserOpenFailed: return "无法打开系统浏览器，请检查默认浏览器设置后重试"
             case .requestRejected(let code): return "Codex 拒绝请求（错误码：\(code.map(String.init) ?? "未知")）"
+            case .chatGPTAuthRequired: return "使用重置额度需要先登录 ChatGPT 账号"
+            case .resetCreditsUnavailable: return "Codex 当前没有提供重置额度详情，请稍后刷新"
             }
         }
     }
@@ -123,6 +151,53 @@ public final class CodexAppServer {
         }
     }
 
+    /// Reads banked reset credits using the official account/rateLimits/read response.
+    public func loadResetCredits() throws -> CodexResetCredits {
+        try withSession(timeout: timeoutSeconds) { session in
+            let accountResponse = try session.request(
+                id: 2, method: "account/read", params: ["refreshToken": false]
+            )
+            let accountResult = try Self.checkedResult(accountResponse)
+            guard let account = accountResult["account"] as? [String: Any],
+                  account["type"] as? String == "chatgpt" else {
+                throw ClientError.chatGPTAuthRequired
+            }
+            let response = try session.request(id: 3, method: "account/rateLimits/read")
+            return try Self.parseResetCredits(response)
+        }
+    }
+
+    /// Consumes exactly the selected reset credit. Reuse the same idempotency key
+    /// if the outcome of a network request is uncertain.
+    public func consumeResetCredit(creditID: String?,
+                                   idempotencyKey: String) throws -> CodexResetConsumeOutcome {
+        guard !idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              creditID?.isEmpty != true else {
+            throw ClientError.invalidResponse
+        }
+        return try withSession(timeout: timeoutSeconds) { session in
+            let accountResponse = try session.request(
+                id: 2, method: "account/read", params: ["refreshToken": false]
+            )
+            let accountResult = try Self.checkedResult(accountResponse)
+            guard let account = accountResult["account"] as? [String: Any],
+                  account["type"] as? String == "chatgpt" else {
+                throw ClientError.chatGPTAuthRequired
+            }
+            var params: [String: Any] = ["idempotencyKey": idempotencyKey]
+            if let creditID { params["creditId"] = creditID }
+            let response = try session.request(
+                id: 3, method: "account/rateLimitResetCredit/consume", params: params
+            )
+            let result = try Self.checkedResult(response)
+            guard let rawOutcome = result["outcome"] as? String,
+                  let outcome = CodexResetConsumeOutcome(rawValue: rawOutcome) else {
+                throw ClientError.invalidResponse
+            }
+            return outcome
+        }
+    }
+
     /// Browser login: Codex starts a localhost OAuth callback listener and owns all credentials.
     /// `openURL` must hand the URL to a genuine system browser, not an embedded web view.
     public func loginWithChatGPT(openURL: (URL) -> Bool) throws {
@@ -157,6 +232,50 @@ public final class CodexAppServer {
         guard let raw = try? JSONSerialization.data(withJSONObject: response),
               let usage = try? UsageParser.parseResponse(raw) else { throw ClientError.rateLimitUnavailable }
         return usage
+    }
+
+    private static func parseResetCredits(_ response: [String: Any]) throws -> CodexResetCredits {
+        let result = try checkedResult(response)
+        guard let summary = result["rateLimitResetCredits"] as? [String: Any],
+              let countValue = summary["availableCount"] as? NSNumber else {
+            throw ClientError.resetCreditsUnavailable
+        }
+        let count = countValue.intValue
+        guard count >= 0 else { throw ClientError.invalidResponse }
+
+        guard let rawCredits = summary["credits"], !(rawCredits is NSNull) else {
+            return CodexResetCredits(availableCount: count, credits: nil)
+        }
+        guard let rows = rawCredits as? [[String: Any]] else { throw ClientError.invalidResponse }
+        let credits = try rows.map { row -> CodexResetCredit in
+            guard let id = row["id"] as? String, !id.isEmpty,
+                  let resetType = row["resetType"] as? String, !resetType.isEmpty,
+                  let status = row["status"] as? String, !status.isEmpty,
+                  let grantedAtValue = row["grantedAt"] as? NSNumber,
+                  grantedAtValue.doubleValue.isFinite, grantedAtValue.doubleValue > 0 else {
+                throw ClientError.invalidResponse
+            }
+            let expiry: Date?
+            if let rawExpiry = row["expiresAt"], !(rawExpiry is NSNull) {
+                guard let value = rawExpiry as? NSNumber,
+                      value.doubleValue.isFinite, value.doubleValue > 0 else {
+                    throw ClientError.invalidResponse
+                }
+                expiry = Date(timeIntervalSince1970: value.doubleValue)
+            } else {
+                expiry = nil
+            }
+            return CodexResetCredit(
+                id: id,
+                resetType: resetType,
+                status: status,
+                grantedAt: Date(timeIntervalSince1970: grantedAtValue.doubleValue),
+                expiresAt: expiry,
+                title: row["title"] as? String,
+                description: row["description"] as? String
+            )
+        }
+        return CodexResetCredits(availableCount: count, credits: credits)
     }
 
     private static func checkedResult(_ response: [String: Any]) throws -> [String: Any] {
