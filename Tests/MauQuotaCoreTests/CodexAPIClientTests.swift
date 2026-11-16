@@ -81,7 +81,7 @@ final class CodexAPIClientTests: XCTestCase {
     }
 
     private let usageJSON = Data(#"""
-{
+    {
       "account_id":"account-123",
       "plan_type":"plus",
       "rate_limit":{
@@ -148,7 +148,7 @@ final class CodexAPIClientTests: XCTestCase {
             XCTAssertEqual(request.url?.path, "/backend-api/wham/rate-limit-reset-credits")
             XCTAssertEqual(request.value(forHTTPHeaderField: "OpenAI-Beta"), "codex-1")
             return (200, Data(#"""
-{
+            {
               "available_count":1,
               "credits":[{
                 "id":"credit-1",
