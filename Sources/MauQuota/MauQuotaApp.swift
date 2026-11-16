@@ -16,7 +16,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private var lastError: String?
     private var isLoginError = false
     private var resetCreditsWindowController: ResetCreditsWindowController?
-    private let reader = CodexAppServer()
+    private let reader = CodexAPIClient()
     private let appearanceSettings = MenuBarAppearanceSettings()
     private let preferences = MenuBarPreferences()
     private let logger = Logger(subsystem: "dev.mau.mauquota", category: "usage")
@@ -161,15 +161,18 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func copyDiagnosisClicked(_ sender: Any?) {
-        let path = reader.resolvedRuntimePath ?? (activeLanguage == .english ? "Not found" : "未找到")
-        let source = reader.resolvedRuntimeSource ?? (activeLanguage == .english ? "Unavailable" : "不可用")
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out / unknown" : "未登录/未知") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
+        let login = lastAccount?.label ?? (hasChecked ? (activeLanguage == .english ? "Signed out" : "未登录") : (activeLanguage == .english ? "Not checked" : "尚未检查"))
+        let credentialState = reader.hasStoredCredentials
+            ? (activeLanguage == .english ? "Present" : "已保存")
+            : (activeLanguage == .english ? "Not present" : "未保存")
         let issue = displayedError() ?? (activeLanguage == .english ? "None" : "无")
         let diagnostic = """
         MauQuota v\(appVersion)
-        Codex App Server: \(path)
-        Codex runtime source: \(source)
+        Authentication: Native OAuth
+        Credential storage: macOS Keychain
+        Credentials: \(credentialState)
+        Usage endpoint: https://chatgpt.com/backend-api/wham/usage
         \(tr(.account))\(login)
         \(tr(.refreshInterval)): \(preferences.refreshIntervalMinutes) min
         \(tr(.language)): \(preferences.language.rawValue)
@@ -467,25 +470,17 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         if message.hasPrefix("当前是 ") && message.contains("订阅额度需要 ChatGPT 登录") {
             return "This account uses \(lastAccount?.label ?? "another authentication method"); sign in with ChatGPT to view subscription quotas"
         }
-        if message.hasPrefix("Codex 拒绝请求（错误码：") {
-            let code = message.replacingOccurrences(of: "Codex 拒绝请求（错误码：", with: "").replacingOccurrences(of: "）", with: "")
-            return "Codex rejected the request (error code: \(code))"
-        }
         let translations: [String: String] = [
-            "未找到可用的 Codex App Server 运行组件，请重新安装 MauQuota": "Bundled Codex App Server not found; reinstall MauQuota",
-            "无法启动 Codex App Server，请检查应用完整性和执行权限": "Could not launch the Codex App Server; reinstall MauQuota or check app permissions",
-            "无法打开系统浏览器，请检查默认浏览器设置后重试": "Could not open the system browser; check your default browser and try again",
-            "Codex 连接已断开（写入失败）": "Codex connection closed unexpectedly (write failed)",
-            "读取 Codex 数据时发生系统错误": "System error while reading Codex data",
-            "连接超时，请检查网络、登录状态或代理": "Connection timed out; check your network, login, or proxy",
-            "Codex App Server 提前退出（可能是版本或运行环境问题）": "Codex App Server exited early; check its version and environment",
-            "Codex 返回的数据过大": "Codex response was too large",
-            "Codex 初始化失败，请更新 MauQuota": "Codex initialization failed; update MauQuota",
-            "Codex 返回了不兼容的账号数据": "Codex returned incompatible account data",
-            "已连接，但服务没有返回可识别的额度": "Connected, but no recognizable quota limits were returned",
-            "Codex 返回了不安全或无效的登录地址": "Codex returned an invalid or unsafe login URL",
-            "官方 Codex App Server 未提供浏览器登录地址，请更新 MauQuota": "The bundled App Server did not provide a browser login URL; update MauQuota",
-            "浏览器授权未完成或登录失败，可重新尝试": "Browser authorization was not completed; please try again"
+            "当前尚未登录 ChatGPT，请先登录。": "Not signed in to ChatGPT. Sign in to continue.",
+            "ChatGPT 登录已过期或授权失效，请重新登录。": "Your ChatGPT session expired or was revoked. Sign in again.",
+            "请求过于频繁（HTTP 429），请稍后重试。": "Too many requests (HTTP 429). Try again later.",
+            "无法打开系统浏览器，请检查默认浏览器设置后重试。": "Could not open the system browser; check your default browser and try again.",
+            "浏览器授权等待超时，请重新尝试。": "Browser authorization timed out. Please try again.",
+            "OAuth 授权校验失败（state 不匹配），请重新登录。": "OAuth state validation failed. Please sign in again.",
+            "无法安全读取或保存 ChatGPT 登录凭据（Keychain 错误": "Could not access secure ChatGPT credentials in Keychain.",
+            "ChatGPT 当前没有返回可用的重置额度详情，请稍后刷新。": "ChatGPT did not return reset-credit details. Try refreshing later.",
+            "ChatGPT 返回了不兼容的数据格式。": "ChatGPT returned an incompatible response.",
+            "请求超时，请检查网络或代理后重试。": "Request timed out. Check your network or proxy and try again."
         ]
         return translations[message] ?? message
     }
