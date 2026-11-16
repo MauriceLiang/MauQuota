@@ -30,19 +30,43 @@ private final class StubURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
+    private static func materializeBodyStream(in request: URLRequest) -> URLRequest {
+        guard let stream = request.httpBodyStream else { return request }
+
+        var capturedRequest = request
+        stream.open()
+        defer { stream.close() }
+
+        var body = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while true {
+            let count = buffer.withUnsafeMutableBufferPointer { bytes in
+                stream.read(bytes.baseAddress!, maxLength: bytes.count)
+            }
+            guard count > 0 else { break }
+            body.append(contentsOf: buffer.prefix(count))
+        }
+
+        capturedRequest.httpBody = body
+        capturedRequest.httpBodyStream = nil
+        return capturedRequest
+    }
+
     override func startLoading() {
+        let capturedRequest = Self.materializeBodyStream(in: request)
+
         Self.lock.lock()
         let handler = Self.handler
-        Self.requests.append(request)
+        Self.requests.append(capturedRequest)
         Self.lock.unlock()
 
         guard let handler else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        let (status, data) = handler(request)
+        let (status, data) = handler(capturedRequest)
         let response = HTTPURLResponse(
-            url: request.url!,
+            url: capturedRequest.url!,
             statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
