@@ -17,7 +17,7 @@ concurrency:
 jobs:
   test:
     name: Test
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
       - name: Checkout
