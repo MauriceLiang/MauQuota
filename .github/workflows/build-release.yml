@@ -27,18 +27,13 @@ jobs:
 
   build:
     name: Build (${{ matrix.arch }})
-    # The 2.0.0 promotion reuses the arm64 installer from successful PR run #63.
-    # That run built the identical Git tree; future releases build both architectures normally.
-    if: ${{ !(matrix.arch == 'arm64' && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')) }}
+    # For the one-time 2.0.0 promotion, reuse the verified arm64 artifact from PR run #63.
+    # The PR and main commits have identical Git trees. Future releases build both architectures.
     needs: test
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
+        include: ${{ fromJSON((github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')) && '[{"runner":"macos-15-intel","arch":"x86_64"}]' || '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
