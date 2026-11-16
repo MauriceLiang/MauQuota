@@ -204,7 +204,10 @@ final class ResetCreditsWindowController: NSWindowController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
-        contentStack.distribution = .fill
+        // Keep all dynamic content grouped at the top of the scroll view.
+        // The scroll view may fill the window, but its document content must not
+        // distribute spare height between rows.
+        contentStack.distribution = .gravityAreas
         contentStack.spacing = 13
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = contentStack
@@ -213,16 +216,6 @@ final class ResetCreditsWindowController: NSWindowController {
         scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
         contentStack.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor).isActive = true
 
-        let footer = label(
-            isChinese
-                ? "重置额度是一次性权益，不会累加为永久额度。"
-                : "Resets are one-time benefits; they do not permanently increase your plan limits.",
-            size: 12, weight: .regular, color: .secondaryLabelColor
-        )
-        footer.maximumNumberOfLines = 2
-        footer.alignment = .left
-        root.addArrangedSubview(footer)
-        footer.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     }
 
     private func reload(preservingStatus: Bool = false) {
@@ -270,6 +263,17 @@ final class ResetCreditsWindowController: NSWindowController {
         case .history:
             renderHistory()
         }
+
+        // The note is part of the page content, not a bottom-pinned footer.
+        // This keeps both tabs in a natural top-to-bottom reading order.
+        let footer = label(
+            isChinese
+                ? "重置额度是一次性权益，不会累加为永久额度。"
+                : "Resets are one-time benefits; they do not permanently increase your plan limits.",
+            size: 12, weight: .regular, color: .secondaryLabelColor
+        )
+        footer.maximumNumberOfLines = 2
+        addContent(footer)
     }
 
     private func renderAvailable() {
@@ -620,7 +624,7 @@ final class ResetCreditsWindowController: NSWindowController {
     /// Adds one full-width item to the reading column. Text labels explicitly align left.
     private func addContent(_ view: NSView) {
         view.translatesAutoresizingMaskIntoConstraints = false
-        contentStack.addArrangedSubview(view)
+        contentStack.addView(view, in: .top)
         view.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
     }
 
