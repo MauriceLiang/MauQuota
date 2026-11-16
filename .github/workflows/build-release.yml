@@ -131,7 +131,7 @@ jobs:
                       "clientInfo": {
                           "name": "mauquota_macos",
                           "title": "MauQuota",
-                          "version": "1.8.6-preview.1",
+                          "version": "1.8.6-preview.2",
                       },
                       "capabilities": {},
                   },

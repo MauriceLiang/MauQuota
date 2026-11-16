@@ -78,6 +78,10 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
 
+    /// Informational menu rows use an enabled no-op action so AppKit renders
+    /// them with normal label colors without making them actionable.
+    @objc private func informationalItemClicked(_ sender: Any?) {}
+
     @objc private func coloredRingToggled(_ sender: Any?) {
         appearanceSettings.showsColoredRing.toggle()
         drawMenu() // UI-only change; no quota request.
@@ -297,10 +301,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         }
 
         if let account = lastAccount {
-            menu.addItem(disabled: tr(.account) + account.label)
-            if let email = account.email, !email.isEmpty { menu.addItem(disabled: "    \(email)") }
+            addInformationalItem(tr(.account) + account.label, to: menu)
+            if let email = account.email, !email.isEmpty {
+                addInformationalItem("    \(email)", to: menu)
+            }
         } else if hasChecked && lastError == nil {
-            menu.addItem(disabled: tr(.loggedOutDescription))
+            addInformationalItem(tr(.loggedOutDescription), to: menu)
         }
 
         if let usage = lastUsage {
@@ -311,7 +317,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             date.locale = activeLanguage.locale
             date.dateStyle = .none
             date.timeStyle = .medium
-            menu.addItem(disabled: tr(.updatedAt) + date.string(from: usage.fetchedAt))
+            addInformationalItem(tr(.updatedAt) + date.string(from: usage.fetchedAt), to: menu)
         }
         if let error = lastError {
             menu.addItem(.separator())
@@ -452,8 +458,19 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         return translations[message] ?? message
     }
 
+    private func addInformationalItem(_ title: String, to menu: NSMenu) {
+        let item = NSMenuItem(
+            title: title,
+            action: #selector(informationalItemClicked(_:)),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.isEnabled = true
+        menu.addItem(item)
+    }
+
     private func addDetail(_ window: QuotaWindow, to menu: NSMenu) {
-        menu.addItem(disabled: "\(window.label) \(tr(.remaining)) \(window.remainingPercent)%")
+        addInformationalItem("\(window.label) \(tr(.remaining)) \(window.remainingPercent)%", to: menu)
         let reset: String
         if let resetsAt = window.resetsAt {
             let formatter = DateFormatter()
@@ -462,7 +479,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             formatter.timeStyle = .short
             reset = formatter.string(from: resetsAt)
         } else { reset = tr(.notProvided) }
-        menu.addItem(disabled: "    \(tr(.resetAt))\(reset)")
+        addInformationalItem("    \(tr(.resetAt))\(reset)", to: menu)
     }
 }
 

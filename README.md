@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.1-orange">
+  <img alt="Version 1.8.6 preview" src="https://img.shields.io/badge/version-1.8.6--preview.2-orange">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -91,6 +91,10 @@ swift test
 核心逻辑（额度解析、进程通信、偏好设置）均有单元测试覆盖。运行测试需要完整 Xcode（命令行工具不含 XCTest）。
 
 ## 版本记录
+
+**v1.8.6-preview.2**
+
+- 账号、邮箱、额度和更新时间改为正常文字显示，同时保持只读，不响应菜单操作。
 
 **v1.8.6-preview.1**
 
