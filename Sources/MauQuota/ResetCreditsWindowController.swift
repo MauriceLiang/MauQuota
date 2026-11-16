@@ -14,7 +14,7 @@ final class ResetCreditsWindowController: NSWindowController {
         case history = 1
     }
 
-    private let reader: CodexAppServer
+    private let reader: CodexAPIClient
     private let account: CodexAccount
     private let language: DisplayLanguage
     private let historyStore = ResetCreditHistoryStore()
@@ -36,7 +36,7 @@ final class ResetCreditsWindowController: NSWindowController {
 
     private var isChinese: Bool { language == .simplifiedChinese }
 
-    init(reader: CodexAppServer,
+    init(reader: CodexAPIClient,
          account: CodexAccount,
          usage: CodexUsage?,
          language: DisplayLanguage,
