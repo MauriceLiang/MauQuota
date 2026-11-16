@@ -3,7 +3,7 @@ name: Build & Release
 on:
   push:
     branches: [main, "preview/**"]
-    tags: ["v*"]
+    tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
 
@@ -219,7 +219,7 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/preview/')
+    if: startsWith(github.ref, 'refs/heads/preview/') || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.'))
     needs: build
     runs-on: macos-15
     timeout-minutes: 15
