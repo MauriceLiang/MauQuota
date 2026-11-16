@@ -238,7 +238,7 @@ enum CodexOAuthCore {
     }
 
     static func refreshedCredentials(_ old: CodexOAuthCredentials,
-                                     response: OAuthTokenResponse) throws -> CodexOAuthCredentials {
+                                     response: OAuthTokenResponse) -> CodexOAuthCredentials {
         let claims = accountClaims(from: response)
         let idClaims = jwtClaims(response.idToken)
         let accessClaims = jwtClaims(response.accessToken)
@@ -337,6 +337,7 @@ public final class CodexAPIClient {
     private let timeoutSeconds: TimeInterval
     private let session: URLSession
     private let credentialStore: CodexCredentialStore
+    private let refreshLock = NSLock()
     private let baseURL = URL(string: "https://chatgpt.com/backend-api/")!
 
     public init(timeoutSeconds: TimeInterval = 25) {
@@ -464,6 +465,14 @@ public final class CodexAPIClient {
     }
 
     private func refreshCredentials(_ credentials: CodexOAuthCredentials) throws -> CodexOAuthCredentials {
+        refreshLock.lock()
+        defer { refreshLock.unlock() }
+
+        // Another in-flight request may already have rotated this refresh token.
+        if let latest = try credentialStore.load(),
+           latest.accessToken != credentials.accessToken || latest.refreshToken != credentials.refreshToken {
+            return latest
+        }
         guard let refreshToken = credentials.refreshToken, !refreshToken.isEmpty else {
             throw ClientError.reauthenticationRequired
         }
