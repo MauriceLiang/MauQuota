@@ -467,8 +467,20 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
 
     private func localizedErrorString(_ message: String) -> String {
         guard activeLanguage == .english else { return message }
-        if message.hasPrefix("当前是 ") && message.contains("订阅额度需要 ChatGPT 登录") {
-            return "This account uses \(lastAccount?.label ?? "another authentication method"); sign in with ChatGPT to view subscription quotas"
+        if message.hasPrefix("无法安全读取或保存 ChatGPT 登录凭据") {
+            return "Could not access secure ChatGPT credentials in Keychain."
+        }
+        if message.hasPrefix("额度服务请求失败（HTTP ") {
+            return "Quota service request failed: " + message
+        }
+        if message.hasPrefix("网络请求失败：") {
+            return "Network request failed: " + message.replacingOccurrences(of: "网络请求失败：", with: "")
+        }
+        if message.hasPrefix("ChatGPT OAuth 授权失败：") {
+            return "ChatGPT authorization failed: " + message.replacingOccurrences(of: "ChatGPT OAuth 授权失败：", with: "")
+        }
+        if message.hasPrefix("无法启动本地 OAuth 回调服务：") {
+            return "Could not start the local OAuth callback listener: " + message.replacingOccurrences(of: "无法启动本地 OAuth 回调服务：", with: "")
         }
         let translations: [String: String] = [
             "当前尚未登录 ChatGPT，请先登录。": "Not signed in to ChatGPT. Sign in to continue.",
