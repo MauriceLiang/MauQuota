@@ -1,8 +1,7 @@
 import AppKit
 import MauQuotaCore
 
-/// 双环菜单栏标识：外圈为每周额度，内圈为 5 小时额度，颜色表示剩余比例。
-/// 在 18～22pt 的菜单栏里不绘制中心代码括号，确保两圈清楚可辨。
+/// Outer ring: weekly usage. Inner ring: five-hour usage, only when the plan has that window.
 enum QuotaRingIcon {
     static func color(for remaining: Int) -> NSColor {
         if remaining == 0 { return NSColor.systemRed.withAlphaComponent(0.65) }
@@ -11,24 +10,32 @@ enum QuotaRingIcon {
         return .systemGreen
     }
 
-    static func render(_ state: QuotaRingState) -> NSImage {
+    static func render(_ state: QuotaRingState,
+                       settings: MenuBarAppearanceSettings) -> NSImage {
         let size = NSSize(width: 21, height: 21)
         let image = NSImage(size: size, flipped: false) { _ in
             let center = NSPoint(x: 10.5, y: 10.5)
-            drawRing(center: center, radius: 8.6, width: 2.5,
-                     remaining: state.weeklyRemaining)
-            drawRing(center: center, radius: 5.25, width: 2.2,
-                     remaining: state.fiveHourRemaining)
+            if let weekly = state.weeklyRemaining {
+                let custom = settings.customColorHex(for: .weeklyRing)
+                    .flatMap { NSColor(mauQuotaHex: $0) }
+                drawRing(center: center, radius: 8.6, width: 2.5,
+                         remaining: weekly, customColor: custom)
+            }
+            if let fiveHour = state.fiveHourRemaining {
+                let custom = settings.customColorHex(for: .fiveHourRing)
+                    .flatMap { NSColor(mauQuotaHex: $0) }
+                drawRing(center: center, radius: 5.25, width: 2.2,
+                         remaining: fiveHour, customColor: custom)
+            }
             return true
         }
-        image.isTemplate = false // macOS 模板图会被统一着色，导致额度颜色丢失。
+        image.isTemplate = false
         return image
     }
 
     private static func drawRing(center: NSPoint, radius: CGFloat, width: CGFloat,
-                                 remaining: Int?) {
-        let color = remaining.map { Self.color(for: $0) } ?? .labelColor
-
+                                 remaining: Int, customColor: NSColor?) {
+        let color = customColor ?? Self.color(for: remaining)
         let track = NSBezierPath(ovalIn: NSRect(
             x: center.x - radius, y: center.y - radius,
             width: radius * 2, height: radius * 2))
@@ -37,7 +44,7 @@ enum QuotaRingIcon {
         trackColor.setStroke()
         track.stroke()
 
-        guard let remaining, remaining > 0 else { return }
+        guard remaining > 0 else { return }
         let percent = CGFloat(min(100, max(0, remaining))) / 100
         let progress = NSBezierPath()
         progress.lineWidth = width

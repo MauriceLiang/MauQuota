@@ -1,21 +1,16 @@
 import Foundation
 
-/// Preferences for the menu-bar utility. No account information or secrets are stored here.
 public final class MenuBarPreferences {
     public static let defaultRefreshMinutes = 2
     public static let minimumRefreshMinutes = 1
     public static let maximumRefreshMinutes = 120
     public static let presetRefreshMinutes = [1, 2, 5, 10, 15, 30, 60]
-
     private static let refreshKey = "refreshIntervalMinutes"
     private static let languageKey = "displayLanguage"
     private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
+    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    /// Rejects invalid persisted values and constrains any programmatic writes.
     public var refreshIntervalMinutes: Int {
         get {
             guard let minutes = defaults.object(forKey: Self.refreshKey) as? Int,
@@ -53,15 +48,15 @@ public enum DisplayLanguage: String, CaseIterable, Equatable {
     }
 }
 
-/// A resource-free bilingual string table, available to unit tests on Linux.
 public enum MenuLocalization {
     public enum Key {
-        case tooltipHidden, tooltipUnknown, tooltipRings
+        case tooltipHidden, tooltipUnknown, tooltipRings, tooltipWeeklyOnly
         case loggingInTitle, checkingTitle, loggedOutTitle, errorTitle
         case authorizeInBrowser, checkingStatus, account, loggedOutDescription
         case remaining, resetAt, notProvided, updatedAt, error
         case login, relogin, refresh, refreshing
         case ringToggle, numberColorToggle, numberColorEnabled, redNumberAlignmentCompensation
+        case appearanceSettings
         case refreshInterval, customInterval, language
         case followSystem, simplifiedChinese, english, copyDiagnostics, version, quit
         case customIntervalTitle, customIntervalMessage, save, cancel
@@ -73,7 +68,8 @@ public enum MenuLocalization {
         switch key {
         case .tooltipHidden: return chinese ? "Codex 额度 · 点击查看账号、额度和设置" : "Codex quotas · Click for account, quotas and settings"
         case .tooltipUnknown: return chinese ? "Codex 额度未知 · 点击查看详情" : "Codex quotas unavailable · Click for details"
-        case .tooltipRings: return chinese ? "外圈：每周额度；内圈：5 小时额度。绿色 >50%，橙色 21–50%，红色 ≤20%" : "Outer ring: weekly quota; inner ring: 5-hour quota. Green >50%, orange 21–50%, red ≤20%"
+        case .tooltipRings: return chinese ? "外圈：每周额度；内圈：5 小时额度。默认按剩余比例变色" : "Outer ring: weekly quota; inner ring: 5-hour quota. Colors follow remaining usage by default"
+        case .tooltipWeeklyOnly: return chinese ? "外圈：每周额度；当前套餐不包含 5 小时额度" : "Outer ring: weekly quota; this plan has no five-hour quota window"
         case .loggingInTitle: return chinese ? "Codex 登录中…" : "Codex Signing in…"
         case .checkingTitle: return "Codex …"
         case .loggedOutTitle: return chinese ? "Codex 未登录" : "Codex Signed out"
@@ -95,6 +91,7 @@ public enum MenuLocalization {
         case .numberColorToggle: return chinese ? "显示彩色额度数字" : "Show colored quota numbers"
         case .numberColorEnabled: return chinese ? "启用彩色额度数字" : "Enable colored quota numbers"
         case .redNumberAlignmentCompensation: return chinese ? "红色数字视觉偏移补偿" : "Red number alignment compensation"
+        case .appearanceSettings: return chinese ? "外观自定义…" : "Customize appearance…"
         case .refreshInterval: return chinese ? "自动刷新间隔" : "Auto-refresh interval"
         case .customInterval: return chinese ? "自定义…" : "Custom…"
         case .language: return chinese ? "语言 / Language" : "Language / 语言"
@@ -102,7 +99,7 @@ public enum MenuLocalization {
         case .simplifiedChinese: return "简体中文"
         case .english: return "English"
         case .copyDiagnostics: return chinese ? "复制诊断信息" : "Copy diagnostic information"
-        case .version: return chinese ? "MauQuota v2.0.0 · 原生 OAuth" : "MauQuota v2.0.0 · Native OAuth"
+        case .version: return chinese ? "MauQuota v2.1.0 · 原生 OAuth" : "MauQuota v2.1.0 · Native OAuth"
         case .quit: return chinese ? "退出 MauQuota" : "Quit MauQuota"
         case .customIntervalTitle: return chinese ? "自定义刷新间隔" : "Custom refresh interval"
         case .customIntervalMessage: return chinese ? "请输入 1–120 之间的整数分钟。新间隔会立即重新计时，不会立即发送请求。" : "Enter a whole number of minutes from 1 to 120. The next interval starts now; no immediate request is made."

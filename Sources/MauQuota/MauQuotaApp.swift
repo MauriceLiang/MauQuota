@@ -16,6 +16,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private var lastError: String?
     private var isLoginError = false
     private var resetCreditsWindowController: ResetCreditsWindowController?
+    private var appearanceSettingsWindowController: AppearanceSettingsWindowController?
     private let reader = CodexAPIClient()
     private let appearanceSettings = MenuBarAppearanceSettings()
     private let preferences = MenuBarPreferences()
@@ -104,6 +105,21 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         controller.present()
     }
 
+    @objc private func appearanceSettingsClicked(_ sender: Any?) {
+        if let controller = appearanceSettingsWindowController {
+            controller.present()
+            return
+        }
+        let controller = AppearanceSettingsWindowController(
+            settings: appearanceSettings,
+            language: activeLanguage
+        ) { [weak self] in
+            self?.drawMenu()
+        }
+        appearanceSettingsWindowController = controller
+        controller.present()
+    }
+
     @objc private func coloredRingToggled(_ sender: Any?) {
         appearanceSettings.showsColoredRing.toggle()
         drawMenu() // UI-only change; no quota request.
@@ -163,6 +179,8 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         preferences.language = selectedLanguage
         resetCreditsWindowController?.close()
         resetCreditsWindowController = nil
+        appearanceSettingsWindowController?.close()
+        appearanceSettingsWindowController = nil
         drawMenu() // Language changes instantly; no restart or quota request.
     }
 
@@ -282,19 +300,27 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     private static func coloredTitle(_ title: NSAttributedString, usage: CodexUsage,
+                                     appearanceSettings: MenuBarAppearanceSettings,
                                      compensatesRedAlignment: Bool) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: title)
         let text = result.string as NSString
         let rings = QuotaRingState(usage: usage)
-        let windows = [(usage.shortWindow, rings.fiveHourRemaining), (usage.longWindow, rings.weeklyRemaining)]
+        let windows = [
+            (usage.shortWindow, rings.fiveHourRemaining, AppearanceColorKey.fiveHourNumber),
+            (usage.longWindow, rings.weeklyRemaining, AppearanceColorKey.weeklyNumber)
+        ]
         var position = 0
-        for (window, remaining) in windows {
+        for (window, remaining, colorKey) in windows {
             guard let window else { continue }
             let range = text.range(of: "\(window.remainingPercent)%", options: [],
                                    range: NSRange(location: position, length: text.length - position))
             guard range.location != NSNotFound else { break }
             if let remaining {
-                result.addAttribute(.foregroundColor, value: QuotaRingIcon.color(for: remaining), range: range)
+                let custom = appearanceSettings.customColorHex(for: colorKey)
+                    .flatMap { NSColor(mauQuotaHex: $0) }
+                result.addAttribute(.foregroundColor,
+                                    value: custom ?? QuotaRingIcon.color(for: remaining),
+                                    range: range)
                 if compensatesRedAlignment && remaining <= 20 {
                     result.addAttribute(.baselineOffset, value: -0.5, range: range)
                 }
@@ -319,16 +345,23 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             if let usage = lastUsage, appearanceSettings.showsColoredNumbers {
                 button.attributedTitle = Self.coloredTitle(
                     button.attributedTitle, usage: usage,
+                    appearanceSettings: appearanceSettings,
                     compensatesRedAlignment: appearanceSettings.compensatesRedNumberAlignment
                 )
             }
         }
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.image = appearanceSettings.showsColoredRing
-            ? QuotaRingIcon.render(QuotaRingState(usage: lastUsage)) : nil
-        statusItem.button?.toolTip = !appearanceSettings.showsColoredRing
-            ? tr(.tooltipHidden)
-            : (lastUsage == nil ? tr(.tooltipUnknown) : tr(.tooltipRings))
+            ? QuotaRingIcon.render(QuotaRingState(usage: lastUsage), settings: appearanceSettings) : nil
+        let ringTooltip: String
+        if let usage = lastUsage, usage.shortWindow != nil, usage.longWindow != nil {
+            ringTooltip = tr(.tooltipRings)
+        } else if let usage = lastUsage, usage.longWindow != nil {
+            ringTooltip = tr(.tooltipWeeklyOnly)
+        } else {
+            ringTooltip = tr(.tooltipUnknown)
+        }
+        statusItem.button?.toolTip = !appearanceSettings.showsColoredRing ? tr(.tooltipHidden) : ringTooltip
 
         if isLoggingIn {
             menu.addItem(disabled: tr(.authorizeInBrowser))
@@ -347,8 +380,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
 
         if let usage = lastUsage {
             menu.addItem(.separator())
-            if let short = usage.shortWindow { addDetail(short, to: menu) }
-            if let long = usage.longWindow { addDetail(long, to: menu) }
+            if let short = usage.shortWindow {
+                addDetail(short, colorKey: .fiveHourDetail, to: menu)
+            }
+            if let long = usage.longWindow {
+                addDetail(long, colorKey: .weeklyDetail, to: menu)
+            }
             let date = DateFormatter()
             date.locale = activeLanguage.locale
             date.dateStyle = .none
@@ -411,6 +448,14 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         let numberColorItem = NSMenuItem(title: tr(.numberColorToggle), action: nil, keyEquivalent: "")
         numberColorItem.submenu = numberColorMenu
         menu.addItem(numberColorItem)
+
+        let appearanceItem = NSMenuItem(
+            title: tr(.appearanceSettings),
+            action: #selector(appearanceSettingsClicked(_:)),
+            keyEquivalent: ""
+        )
+        appearanceItem.target = self
+        menu.addItem(appearanceItem)
         addRefreshIntervalMenu(to: menu)
         addLanguageMenu(to: menu)
 
@@ -507,15 +552,23 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         return translations[message] ?? message
     }
 
-    private func addInformationalItem(_ title: String, to menu: NSMenu) {
+    private func addInformationalItem(_ title: String, to menu: NSMenu,
+                                      textColor: NSColor? = nil) {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.view = InformationalMenuItemView(title: title, font: menu.font)
+        item.view = InformationalMenuItemView(title: title, font: menu.font,
+                                              textColor: textColor ?? .labelColor)
         item.isEnabled = false
         menu.addItem(item)
     }
 
-    private func addDetail(_ window: QuotaWindow, to menu: NSMenu) {
-        addInformationalItem("\(window.label) \(tr(.remaining)) \(window.remainingPercent)%", to: menu)
+    private func addDetail(_ window: QuotaWindow, colorKey: AppearanceColorKey, to menu: NSMenu) {
+        let textColor = appearanceSettings.customColorHex(for: colorKey)
+            .flatMap { NSColor(mauQuotaHex: $0) }
+        addInformationalItem(
+            "\(window.label) \(tr(.remaining)) \(window.remainingPercent)%",
+            to: menu,
+            textColor: textColor
+        )
         let reset: String
         if let resetsAt = window.resetsAt {
             let formatter = DateFormatter()
@@ -524,16 +577,16 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             formatter.timeStyle = .short
             reset = formatter.string(from: resetsAt)
         } else { reset = tr(.notProvided) }
-        addInformationalItem("    \(tr(.resetAt))\(reset)", to: menu)
+        addInformationalItem("    \(tr(.resetAt))\(reset)", to: menu, textColor: textColor)
     }
 }
 
 /// A menu row that draws its own text, bypassing AppKit's disabled-item dimming.
 private final class InformationalMenuItemView: NSView {
-    init(title: String, font: NSFont) {
+    init(title: String, font: NSFont, textColor: NSColor) {
         let label = NSTextField(labelWithString: title)
         label.font = font
-        label.textColor = .labelColor
+        label.textColor = textColor
         label.lineBreakMode = .byTruncatingTail
         label.isEditable = false
         label.isSelectable = false

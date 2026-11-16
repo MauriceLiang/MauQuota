@@ -12,12 +12,12 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-black">
+  <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-black">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
 
-MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额度剩余百分比和重置时间。原生 Swift + AppKit 实现：没有 Electron，没有 WebView，没有常驻后台运行组件，也不占用 Dock。
+MauQuota 常驻菜单栏，根据 ChatGPT 套餐显示 Codex 可用额度和重置时间。Plus 显示 5 小时与每周额度；Pro 仅显示每周额度。原生 Swift + AppKit 实现：没有 Electron，没有 WebView，没有常驻后台运行组件，也不占用 Dock。
 
 ## 特性
 
@@ -26,7 +26,8 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 - **Keychain 凭据管理** —— Access Token、Refresh Token 和账号标识保存在 macOS Keychain，不读取或修改 <code>~/.codex/auth.json</code>。
 - **直接额度查询** —— 使用 ChatGPT 后端接口获取 5 小时和每周额度，不启动外部进程。
 - **自动刷新 Token** —— Access Token 即将过期或服务端返回 401 时，使用 Refresh Token 更新凭据并重试一次。
-- **双环额度指示** —— 外环代表每周剩余额度，内环代表 5 小时剩余额度；每个环根据自身剩余比例变色，百分比也可显示对应颜色。圆环显示和数字着色可分别开关。
+- **套餐感知额度指示** —— Plus 显示 5 小时与每周双环；Pro 100 / 200 / 500 不显示不存在的 5 小时额度，只展示每周额度。
+- **外观自定义** —— 使用 macOS 原生取色器分别设置 5 小时 / 7 天圆环、菜单栏百分比数字及额度详情文字颜色；支持单项恢复默认，修改立即生效。
 - **使用限额重置** —— 查看可用重置额度及到期时间，选择具体卡片并二次确认后使用；成功后自动刷新额度。历史页展示 MauQuota 本机发起的重置，并可跳转查看 ChatGPT 官方完整记录。
 - **按需刷新** —— 预设间隔与 1–120 分钟自定义刷新，睡眠唤醒后自动更新。
 - **隐私优先** —— 诊断信息不包含邮箱、密码、Access Token 或 Refresh Token。
@@ -34,7 +35,7 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 
 ## 菜单栏一览
 
-菜单栏标题形如 <code>5h 79% · 7d 45%</code>：
+Plus 菜单栏标题形如 <code>5h 79% · 7d 45%</code>；Pro 只显示 <code>7d 45%</code>：
 
 | 元素 | 含义 |
 | --- | --- |
@@ -46,7 +47,7 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 | 橙色 | 剩余 21–50% |
 | 红色 | 剩余 0–20% |
 
-> 文字仅显示服务端返回且能确认的额度窗口。缺失或无法确认的窗口以灰色轨道表示未知，不会被解释为无限额；剩余为 0% 时显示淡红色轨道。
+> 只绘制服务端确认存在的额度窗口。Pro 没有 5 小时额度，因此不会绘制内圈或显示 5 小时重置时间；未知窗口不会被解释为无限额。默认颜色按剩余比例区分，也可以在「外观自定义」中逐项设置。
 
 ## 工作原理
 
@@ -113,6 +114,14 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 核心逻辑（直接额度响应解析、OAuth PKCE、Token 刷新、Keychain 凭据管理和重置请求映射）均有单元测试覆盖。网络测试使用本地 URLProtocol Stub，不会消耗真实额度或重置卡。
 
 ## 版本记录
+
+**v2.1.0**
+
+- 新增外观自定义窗口，使用 macOS 原生颜色选择器设置内外圆环、菜单栏百分比和 5 小时 / 7 天详情文字颜色。
+- 每个颜色项可独立启用或恢复默认；颜色修改立即生效，不触发额度网络请求。
+- 按套餐区分额度窗口：Plus 展示 5 小时与每周额度；Pro 100 / 200 / 500 仅展示每周额度。
+- Pro 账户不再绘制灰色的虚假 5 小时内环，也不显示不存在的 5 小时重置时间。
+- 增加 Plus / Pro 套餐识别及额度解析回归测试。
 
 **v2.0.0**
 

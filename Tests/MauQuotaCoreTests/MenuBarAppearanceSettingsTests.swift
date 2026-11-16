@@ -18,6 +18,35 @@ final class MenuBarAppearanceSettingsTests: XCTestCase {
         XCTAssertTrue(MenuBarAppearanceSettings(defaults: suite).showsColoredRing)
     }
 
+
+    func testCustomColorsAreNormalizedAndPersisted() throws {
+        let (settings, suite) = try makeSettings()
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        settings.setCustomColorHex("  ff12aA ", for: .fiveHourRing)
+        XCTAssertEqual(settings.customColorHex(for: .fiveHourRing), "#FF12AA")
+        XCTAssertEqual(
+            MenuBarAppearanceSettings(defaults: suite).customColorHex(for: .fiveHourRing),
+            "#FF12AA"
+        )
+    }
+
+    func testInvalidCustomColorIsNotPersisted() throws {
+        let (settings, suite) = try makeSettings()
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        settings.setCustomColorHex("#12FGAA", for: .weeklyRing)
+        XCTAssertNil(settings.customColorHex(for: .weeklyRing))
+    }
+
+    func testResetCustomColorsRestoresBuiltInBehavior() throws {
+        let (settings, suite) = try makeSettings()
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        settings.setCustomColorHex("#123456", for: .weeklyNumber)
+        settings.setCustomColorHex("#ABCDEF", for: .fiveHourDetail)
+        settings.resetCustomColors()
+        XCTAssertNil(settings.customColorHex(for: .weeklyNumber))
+        XCTAssertNil(settings.customColorHex(for: .fiveHourDetail))
+    }
+
     private var suiteName: String { "dev.mau.mauquota.test.\(testName)" }
     private var testName: String { name.replacingOccurrences(of: " ", with: "_") }
 

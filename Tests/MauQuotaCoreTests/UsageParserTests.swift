@@ -82,4 +82,39 @@ final class UsageParserTests: XCTestCase {
     }
 
 
+    func testProPlanSuppressesFiveHourWindowAndKeepsWeeklyWindow() throws {
+        let data = Data(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":21,"limit_window_seconds":18000,"reset_at":1793200000},"secondary_window":{"used_percent":55,"limit_window_seconds":604800,"reset_at":1793800000}}}"#.utf8)
+        let usage = try UsageParser.parseResponse(data)
+        XCTAssertNil(usage.shortWindow)
+        XCTAssertEqual(usage.longWindow?.remainingPercent, 45)
+        XCTAssertEqual(usage.menuBarTitle, "7d 45%")
+        let rings = QuotaRingState(usage: usage)
+        XCTAssertNil(rings.fiveHourRemaining)
+        XCTAssertEqual(rings.weeklyRemaining, 45)
+    }
+
+    func testProTierFromOAuthClaimsSuppressesAmbiguousPrimaryWindow() throws {
+        let data = Data(#"{"rate_limit":{"primary_window":{"used_percent":10},"secondary_window":{"used_percent":35,"limit_window_seconds":604800}}}"#.utf8)
+        let usage = try UsageParser.parseResponse(data, planType: "pro_200")
+        XCTAssertNil(usage.shortWindow)
+        XCTAssertEqual(usage.longWindow?.remainingPercent, 65)
+    }
+
+    func testPlusPlanKeepsBothConfirmedWindows() throws {
+        let data = Data(#"{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":20,"limit_window_seconds":18000},"secondary_window":{"used_percent":40,"limit_window_seconds":604800}}}"#.utf8)
+        let usage = try UsageParser.parseResponse(data)
+        XCTAssertEqual(usage.shortWindow?.remainingPercent, 80)
+        XCTAssertEqual(usage.longWindow?.remainingPercent, 60)
+        XCTAssertEqual(usage.menuBarTitle, "5h 80% · 7d 60%")
+    }
+
+    func testCodexPlanRecognizesCurrentProTiers() {
+        XCTAssertEqual(CodexPlan.resolve("pro"), .pro)
+        XCTAssertEqual(CodexPlan.resolve("pro_100"), .pro)
+        XCTAssertEqual(CodexPlan.resolve("pro_200"), .pro)
+        XCTAssertEqual(CodexPlan.resolve("pro_500"), .pro)
+        XCTAssertEqual(CodexPlan.resolve("plus"), .plus)
+        XCTAssertEqual(CodexPlan.displayName(for: "pro_200"), "Pro 200")
+    }
+
 }

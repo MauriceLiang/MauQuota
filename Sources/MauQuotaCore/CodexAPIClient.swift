@@ -11,7 +11,10 @@ public struct CodexAccount: Equatable {
 
     public var isChatGPT: Bool { type == "chatgpt" }
     public var label: String {
-        if isChatGPT { return "ChatGPT" + (planType.map { " · \($0.capitalized)" } ?? "") }
+        if isChatGPT {
+            let plan = CodexPlan.displayName(for: planType)
+            return "ChatGPT" + (plan.map { " · \($0)" } ?? "")
+        }
         return type
     }
 }
@@ -397,8 +400,8 @@ public final class CodexAPIClient {
         let account = CodexAccount(type: "chatgpt", email: credentials.email, planType: credentials.planType)
         do {
             let data = try authenticatedRequest(path: "wham/usage", method: "GET", body: nil)
-            let usage = try UsageParser.parseResponse(data)
             let plan = Self.planType(from: data) ?? credentials.planType
+            let usage = try UsageParser.parseResponse(data, planType: plan)
             let updatedAccount = CodexAccount(type: "chatgpt", email: credentials.email, planType: plan)
             return CodexSnapshot(account: updatedAccount, usage: usage, quotaError: nil)
         } catch {
@@ -551,7 +554,7 @@ public final class CodexAPIClient {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(credentials.accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
-        request.setValue("MauQuota/2.0.0 (macOS)", forHTTPHeaderField: "User-Agent")
+        request.setValue("MauQuota/2.1.0 (macOS)", forHTTPHeaderField: "User-Agent")
         request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if path.contains("rate-limit-reset-credits") {

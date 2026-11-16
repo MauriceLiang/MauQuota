@@ -1,10 +1,37 @@
 import Foundation
 
+public enum CodexPlan: Equatable {
+    case plus, pro, other, unknown
+
+    public static func resolve(_ rawValue: String?) -> CodexPlan {
+        guard let rawValue else { return .unknown }
+        let normalized = String(rawValue.lowercased().filter { $0.isLetter || $0.isNumber })
+        switch normalized {
+        case "plus", "chatgptplus": return .plus
+        case "pro", "pro100", "pro200", "pro500", "pro5x", "pro20x",
+             "chatgptpro", "chatgptpro100", "chatgptpro200", "chatgptpro500": return .pro
+        default: return .other
+        }
+    }
+
+    public static func displayName(for rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let normalized = String(rawValue.lowercased().filter { $0.isLetter || $0.isNumber })
+        switch normalized {
+        case "plus", "chatgptplus": return "Plus"
+        case "pro", "chatgptpro": return "Pro"
+        case "pro100", "chatgptpro100": return "Pro 100"
+        case "pro200", "chatgptpro200": return "Pro 200"
+        case "pro500", "chatgptpro500": return "Pro 500"
+        default: return rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+}
+
 public struct QuotaWindow: Equatable {
     public let remainingPercent: Int
     public let durationMinutes: Int?
     public let resetsAt: Date?
-
     public var label: String {
         guard let minutes = durationMinutes, minutes > 0 else { return "额度" }
         if minutes % 1_440 == 0 { return "\(minutes / 1_440)d" }
@@ -17,69 +44,62 @@ public struct CodexUsage: Equatable {
     public let shortWindow: QuotaWindow?
     public let longWindow: QuotaWindow?
     public let fetchedAt: Date
-
     public var menuBarTitle: String {
-        let windows = [shortWindow, longWindow].compactMap { $0 }
-        return windows.map { "\($0.label) \($0.remainingPercent)%" }.joined(separator: " · ")
+        [shortWindow, longWindow].compactMap { $0 }
+            .map { "\($0.label) \($0.remainingPercent)%" }.joined(separator: " · ")
     }
 }
 
 public enum UsageParserError: Error, Equatable {
-    case invalidJSON
-    case missingRateLimits
-    case missingWindows
-    case serverError
+    case invalidJSON, missingRateLimits, missingWindows, serverError
 }
 
-/// Supports both the Codex app-server protocol and ChatGPT's direct /wham/usage response.
 public enum UsageParser {
-    public static func parseResponse(_ data: Data, now: Date = Date()) throws -> CodexUsage {
+    public static func parseResponse(_ data: Data, planType: String? = nil,
+                                     now: Date = Date()) throws -> CodexUsage {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw UsageParserError.invalidJSON
         }
         if root["error"] != nil { throw UsageParserError.serverError }
+        let effectivePlan = (root["plan_type"] as? String) ?? (root["planType"] as? String) ?? planType
 
-        if let directRateLimit = root["rate_limit"] as? [String: Any] {
-            return try parseDirectRateLimit(directRateLimit, now: now)
+        if let direct = root["rate_limit"] as? [String: Any] {
+            return try parseDirectRateLimit(direct, planType: effectivePlan, now: now)
         }
-
         guard let result = root["result"] as? [String: Any] else {
             throw UsageParserError.missingRateLimits
         }
-
-        // Newer app-server protocol responses can contain several named quota buckets.
         let byID = result["rateLimitsByLimitId"] as? [String: [String: Any]]
         let main = result["rateLimits"] as? [String: Any]
-        let selected = byID?["codex"] ?? main ?? byID?.values.first
-        guard let snapshot = selected else { throw UsageParserError.missingRateLimits }
-
-        let originalWindows: [(QuotaWindow, Int)] = [
-            (snapshot["primary"], 0),
-            (snapshot["secondary"], 1)
-        ].compactMap { entry, index in
-            guard let window = parseAppServerWindow(entry) else { return nil }
-            return (window, index)
+        guard let snapshot = byID?["codex"] ?? main ?? byID?.values.first else {
+            throw UsageParserError.missingRateLimits
         }
-        return try makeUsage(originalWindows, now: now)
+        let windows: [(QuotaWindow, Int)] = [
+            (snapshot["primary"], 0), (snapshot["secondary"], 1)
+        ].compactMap { raw, position in
+            guard let window = parseAppServerWindow(raw) else { return nil }
+            return (window, position)
+        }
+        return try makeUsage(windows, planType: effectivePlan, now: now)
     }
 
-    private static func parseDirectRateLimit(_ snapshot: [String: Any], now: Date) throws -> CodexUsage {
-        let originalWindows: [(QuotaWindow, Int)] = [
-            (snapshot["primary_window"], 0),
-            (snapshot["secondary_window"], 1)
-        ].compactMap { entry, index in
-            guard let window = parseDirectWindow(entry) else { return nil }
-            return (window, index)
+    private static func parseDirectRateLimit(_ snapshot: [String: Any], planType: String?,
+                                             now: Date) throws -> CodexUsage {
+        let windows: [(QuotaWindow, Int)] = [
+            (snapshot["primary_window"], 0), (snapshot["secondary_window"], 1)
+        ].compactMap { raw, position in
+            guard let window = parseDirectWindow(raw) else { return nil }
+            return (window, position)
         }
-        return try makeUsage(originalWindows, now: now)
+        return try makeUsage(windows, planType: planType, now: now)
     }
 
-    private static func makeUsage(_ windows: [(QuotaWindow, Int)], now: Date) throws -> CodexUsage {
+    private static func makeUsage(_ windows: [(QuotaWindow, Int)], planType: String?,
+                                  now: Date) throws -> CodexUsage {
         guard !windows.isEmpty else { throw UsageParserError.missingWindows }
         var short: QuotaWindow?
         var long: QuotaWindow?
         for (window, position) in windows {
-            // If only a seven-day window is returned, never mislabel it as a five-hour window.
             if let minutes = window.durationMinutes {
                 if minutes >= 2_880 { long = window } else { short = window }
             } else if position == 0 {
@@ -87,6 +107,12 @@ public enum UsageParser {
             } else {
                 long = window
             }
+        }
+        // Current Pro tiers have a weekly allowance but no five-hour Codex window.
+        // Never relabel an ambiguous primary slot as a five-hour limit for Pro.
+        if CodexPlan.resolve(planType) == .pro {
+            short = nil
+            guard long != nil else { throw UsageParserError.missingWindows }
         }
         return CodexUsage(shortWindow: short, longWindow: long, fetchedAt: now)
     }
@@ -103,11 +129,8 @@ public enum UsageParser {
             guard value.isFinite, value > 0 else { return nil }
             return Date(timeIntervalSince1970: value)
         }
-        return QuotaWindow(
-            remainingPercent: max(0, min(100, Int((100 - used).rounded()))),
-            durationMinutes: duration,
-            resetsAt: reset
-        )
+        return QuotaWindow(remainingPercent: max(0, min(100, Int((100 - used).rounded()))),
+                           durationMinutes: duration, resetsAt: reset)
     }
 
     private static func parseDirectWindow(_ raw: Any?) -> QuotaWindow? {
@@ -123,11 +146,8 @@ public enum UsageParser {
             guard value.isFinite, value > 0 else { return nil }
             return Date(timeIntervalSince1970: value)
         }
-        return QuotaWindow(
-            remainingPercent: max(0, min(100, Int((100 - used).rounded()))),
-            durationMinutes: duration,
-            resetsAt: reset
-        )
+        return QuotaWindow(remainingPercent: max(0, min(100, Int((100 - used).rounded()))),
+                           durationMinutes: duration, resetsAt: reset)
     }
 
     private static func numeric(_ value: Any?) -> Double? {
@@ -138,7 +158,6 @@ public enum UsageParser {
     }
 }
 
-/// Testable model for the two quota rings. A missing window is never treated as unlimited usage.
 public struct QuotaRingState: Equatable {
     public let weeklyRemaining: Int?
     public let fiveHourRemaining: Int?
