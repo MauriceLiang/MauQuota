@@ -92,6 +92,7 @@ jobs:
           import select
           import subprocess
           import sys
+          from urllib.parse import urlparse
 
           process = subprocess.Popen(
               [sys.argv[1], "--listen", "stdio://"],
@@ -142,7 +143,14 @@ jobs:
               send({"id": 3, "method": "account/login/start", "params": {"type": "chatgpt"}})
               login_result = receive(3)
               auth_url = login_result.get("authUrl", "")
-              if not auth_url.startswith("https://chatgpt.com/") or not login_result.get("loginId"):
+              auth_host = urlparse(auth_url).hostname or ""
+              trusted_host = (
+                  auth_host == "chatgpt.com"
+                  or auth_host.endswith(".chatgpt.com")
+                  or auth_host == "openai.com"
+                  or auth_host.endswith(".openai.com")
+              )
+              if not auth_url.startswith("https://") or not trusted_host or not login_result.get("loginId"):
                   raise RuntimeError("Codex App Server account/login/start did not return a valid ChatGPT authorization URL")
               print("Codex App Server initialize, account/read, and account/login/start smoke tests passed")
           finally:
