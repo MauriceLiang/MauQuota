@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0--preview.1-orange">
+  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-black">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -91,7 +91,7 @@ swift run -c release MauQuota</code></pre>
 
 程序以菜单栏应用方式运行，没有主窗口，也不占用 Dock。图标资源位于 <code>Resources/</code>。
 
-GitHub Actions 会运行 Swift 测试，并分别构建 Apple Silicon（arm64）和 Intel（x86_64）版本的 DMG。预览版会发布为 GitHub Pre-release，正式版仍通过 <code>v*</code> 稳定标签发布，并附带 SHA-256 校验文件。
+GitHub Actions 会运行 Swift 测试，并分别构建 Apple Silicon（arm64）和 Intel（x86_64）版本的 DMG。正式版本通过 <code>v*</code> 稳定标签发布，并附带 SHA-256 校验文件。
 
 DMG 为 ad-hoc 签名、未经 Apple 公证，首次运行可能出现 Gatekeeper 提示。
 
@@ -114,7 +114,7 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 
 ## 版本记录
 
-**v2.0.0-preview.1**
+**v2.0.0**
 
 - 移除内置 Codex App Server 及其架构下载、校验和运行时探测。
 - 原生实现 ChatGPT OAuth Authorization Code + PKCE 和本地回调。
@@ -123,6 +123,9 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 - 加入 Token 自动刷新、401 重试、错误分类和直接 API 响应解析。
 - 保留原有菜单栏双环、双语、刷新间隔、重置卡界面、幂等重试与本机重置历史。
 - GitHub Actions 不再下载或打包外部运行组件，继续提供 arm64 和 x86_64 DMG。
+- 使用独立的 ephemeral URLSession，关闭响应缓存、Cookie 和 URL 凭据缓存。
+- 关闭重置卡窗口后释放对应控制器及界面资源。
+- 在后台网络操作结束后及时回收临时 Foundation 对象，减少不必要的内存滞留。
 
 **v1.9.0**
 
