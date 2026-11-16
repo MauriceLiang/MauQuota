@@ -52,7 +52,7 @@ public final class CodexAppServer {
         public var errorDescription: String? {
             switch self {
             case .missingRuntime: return "未找到可用的 Codex App Server 运行组件，请重新安装 MauQuota"
-            case .cannotStart: return "无法启动 Codex 运行组件，请检查应用完整性和执行权限"
+            case .cannotStart: return "无法启动 Codex App Server，请检查应用完整性和执行权限"
             case .writeFailed: return "Codex 连接已断开（写入失败）"
             case .readFailed: return "读取 Codex 数据时发生系统错误"
             case .timeout: return "连接超时，请检查网络、登录状态或代理"
@@ -62,7 +62,7 @@ public final class CodexAppServer {
             case .invalidResponse: return "Codex 返回了不兼容的账号数据"
             case .rateLimitUnavailable: return "已连接，但服务没有返回可识别的额度"
             case .loginInvalidURL: return "Codex 返回了不安全或无效的登录地址"
-            case .loginRejected: return "官方运行组件未提供浏览器登录地址，请更新 MauQuota"
+            case .loginRejected: return "官方 Codex App Server 未提供浏览器登录地址，请更新 MauQuota"
             case .loginFailed: return "浏览器授权未完成或登录失败，可重新尝试"
             case .browserOpenFailed: return "无法打开系统浏览器，请检查默认浏览器设置后重试"
             case .requestRejected(let code): return "Codex 拒绝请求（错误码：\(code.map(String.init) ?? "未知")）"

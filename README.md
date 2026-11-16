@@ -94,7 +94,7 @@ swift test
 
 **v1.8.6-preview.1**
 
-- 内置官方 Codex CLI 运行组件，首次使用不再要求用户安装 Codex CLI。
+- 内置官方独立 Codex App Server，不再要求用户安装 Codex CLI、Node.js 或 npm。
 - 登录时同步确认系统浏览器是否成功打开；失败时显示明确错误提示。
 - 诊断信息增加运行组件路径与来源。
 

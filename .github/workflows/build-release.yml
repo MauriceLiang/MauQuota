@@ -97,7 +97,7 @@ jobs:
               [sys.argv[1], "--listen", "stdio://"],
               stdin=subprocess.PIPE,
               stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
+              stderr=subprocess.DEVNULL,
               text=True,
               bufsize=1,
           )
@@ -139,7 +139,12 @@ jobs:
               account_result = receive(2)
               if "account" not in account_result:
                   raise RuntimeError("Codex App Server account/read response has no account field")
-              print("Codex App Server initialize and account/read smoke test passed")
+              send({"id": 3, "method": "account/login/start", "params": {"type": "chatgpt"}})
+              login_result = receive(3)
+              auth_url = login_result.get("authUrl", "")
+              if not auth_url.startswith("https://chatgpt.com/") or not login_result.get("loginId"):
+                  raise RuntimeError("Codex App Server account/login/start did not return a valid ChatGPT authorization URL")
+              print("Codex App Server initialize, account/read, and account/login/start smoke tests passed")
           finally:
               if process.poll() is None:
                   process.terminate()

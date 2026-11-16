@@ -131,6 +131,7 @@ final class CodexAppServerTests: XCTestCase {
 
     func testBundledRuntimeIsUsedWithoutCodexCLIInstalled() throws {
         let cli = try makeMock("""
+        [ "$1" = "--listen" ] && [ "$2" = "stdio://" ] || exit 9
         IFS= read -r init
         printf '%s\n' '{"id":1,"result":{}}'
         IFS= read -r initialized
@@ -140,7 +141,7 @@ final class CodexAppServerTests: XCTestCase {
         let reader = CodexAppServer(timeoutSeconds: 3, bundledAppServerExecutable: cli.path)
 
         XCTAssertEqual(reader.resolvedRuntimePath, cli.path)
-        XCTAssertEqual(reader.resolvedRuntimeSource, "bundled")
+        XCTAssertEqual(reader.resolvedRuntimeSource, "bundled App Server")
         let snapshot = try reader.loadSnapshot()
         XCTAssertNil(snapshot.account)
         XCTAssertNil(snapshot.usage)

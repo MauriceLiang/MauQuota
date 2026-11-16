@@ -434,19 +434,19 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             return "Codex rejected the request (error code: \(code))"
         }
         let translations: [String: String] = [
-            "未找到可用的 Codex 运行组件，请重新安装 MauQuota": "Bundled Codex runtime not found; reinstall MauQuota",
-            "无法启动 Codex 运行组件，请检查应用完整性和执行权限": "Could not launch the Codex runtime; reinstall MauQuota or check app permissions",
+            "未找到可用的 Codex App Server 运行组件，请重新安装 MauQuota": "Bundled Codex App Server not found; reinstall MauQuota",
+            "无法启动 Codex App Server，请检查应用完整性和执行权限": "Could not launch the Codex App Server; reinstall MauQuota or check app permissions",
             "无法打开系统浏览器，请检查默认浏览器设置后重试": "Could not open the system browser; check your default browser and try again",
             "Codex 连接已断开（写入失败）": "Codex connection closed unexpectedly (write failed)",
             "读取 Codex 数据时发生系统错误": "System error while reading Codex data",
             "连接超时，请检查网络、登录状态或代理": "Connection timed out; check your network, login, or proxy",
-            "Codex 运行组件提前退出（可能是版本或运行环境问题）": "Codex runtime exited early; check its version and environment",
+            "Codex App Server 提前退出（可能是版本或运行环境问题）": "Codex App Server exited early; check its version and environment",
             "Codex 返回的数据过大": "Codex response was too large",
             "Codex 初始化失败，请更新 MauQuota": "Codex initialization failed; update MauQuota",
             "Codex 返回了不兼容的账号数据": "Codex returned incompatible account data",
             "已连接，但服务没有返回可识别的额度": "Connected, but no recognizable quota limits were returned",
             "Codex 返回了不安全或无效的登录地址": "Codex returned an invalid or unsafe login URL",
-            "官方运行组件未提供浏览器登录地址，请更新 MauQuota": "The bundled runtime did not provide a browser login URL; update MauQuota",
+            "官方 Codex App Server 未提供浏览器登录地址，请更新 MauQuota": "The bundled App Server did not provide a browser login URL; update MauQuota",
             "浏览器授权未完成或登录失败，可重新尝试": "Browser authorization was not completed; please try again"
         ]
         return translations[message] ?? message
