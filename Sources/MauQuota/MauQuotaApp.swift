@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import OSLog
 import Darwin
+import LocalAuthentication
 import MauQuotaCore
 
 @main
@@ -21,6 +22,9 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private let appearanceSettings = MenuBarAppearanceSettings()
     private let preferences = MenuBarPreferences()
     private let logger = Logger(subsystem: "dev.mau.mauquota", category: "usage")
+    private var isSessionUnlocked = true
+    private var isAuthenticating = false
+    private var unlockError: String?
 
     private var activeLanguage: DisplayLanguage { preferences.language.resolved() }
     private func tr(_ key: MenuLocalization.Key) -> String {
@@ -29,6 +33,20 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
 
     static func main() {
         _ = signal(SIGPIPE, SIG_IGN)
+        // Launch-time GUI smoke test, used by the macOS release CI. It catches
+        // AppKit exceptions such as constraints referencing unrelated views.
+        if CommandLine.arguments.contains("--smoke-appearance") {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)
+            let editor = AppearanceSettingsWindowController(
+                settings: MenuBarAppearanceSettings(),
+                language: .english,
+                onChange: {}
+            )
+            precondition(editor.window?.contentView != nil)
+            editor.close()
+            return
+        }
         let app = NSApplication.shared
         let delegate = MauQuotaApp()
         app.delegate = delegate
@@ -49,8 +67,13 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             button.imageScaling = .scaleProportionallyDown
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         }
+        isSessionUnlocked = !preferences.requiresTouchIDAtLaunch
         drawMenu()
-        refresh()
+        if isSessionUnlocked {
+            refresh()
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.requestLocalUnlock() }
+        }
         restartRefreshTimer()
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil
@@ -78,6 +101,68 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
 
     @objc private func didWake() { refresh() }
     @objc private func refreshClicked(_ sender: Any?) { refresh() }
+
+    @objc private func unlockClicked(_ sender: Any?) {
+        DispatchQueue.main.async { [weak self] in self?.requestLocalUnlock() }
+    }
+
+    @objc private func touchIDToggled(_ sender: Any?) {
+        if preferences.requiresTouchIDAtLaunch {
+            preferences.requiresTouchIDAtLaunch = false
+            isSessionUnlocked = true
+            unlockError = nil
+            drawMenu()
+            if !hasChecked { refresh() }
+            return
+        }
+
+        // This optional per-launch protection must not silently fall back to
+        // password-only if the user explicitly selected Touch ID.
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
+              context.biometryType == .touchID else {
+            let alert = NSAlert()
+            alert.messageText = tr(.touchIDUnavailable)
+            alert.addButton(withTitle: activeLanguage == .english ? "OK" : "确定")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return
+        }
+        preferences.requiresTouchIDAtLaunch = true
+        isSessionUnlocked = false
+        DispatchQueue.main.async { [weak self] in self?.requestLocalUnlock() }
+        drawMenu()
+    }
+
+    private func requestLocalUnlock() {
+        guard preferences.requiresTouchIDAtLaunch, !isSessionUnlocked,
+              !isAuthenticating else { return }
+        isAuthenticating = true
+        unlockError = nil
+        drawMenu()
+
+        let context = LAContext()
+        NSApp.activate(ignoringOtherApps: true)
+        context.evaluatePolicy(.deviceOwnerAuthentication,
+                               localizedReason: tr(.touchIDReason)) { [weak self] success, error in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isAuthenticating = false
+                guard self.preferences.requiresTouchIDAtLaunch else { return }
+                if success {
+                    self.isSessionUnlocked = true
+                    self.unlockError = nil
+                    self.drawMenu()
+                    self.refresh()
+                } else {
+                    self.unlockError = error?.localizedDescription ??
+                        (self.activeLanguage == .english ? "Authentication cancelled." : "验证已取消。")
+                    self.drawMenu()
+                }
+            }
+        }
+    }
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
 
@@ -220,7 +305,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     private func refresh() {
-        guard !isFetching, !isLoggingIn else { return }
+        guard isSessionUnlocked, !isFetching, !isLoggingIn else { return }
         isFetching = true
         drawMenu()
         logger.info("开始检查 Codex 账号及额度")
@@ -247,7 +332,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     private func login() {
-        guard !isLoggingIn, !isFetching else { return }
+        guard isSessionUnlocked, !isLoggingIn, !isFetching else { return }
         isLoggingIn = true
         lastError = nil
         isLoginError = false
@@ -344,6 +429,10 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
 
     private func drawMenu() {
         guard statusItem != nil else { return }
+        guard isSessionUnlocked else {
+            drawLockedMenu()
+            return
+        }
         let menu = NSMenu(title: "MauQuota")
         let title: String
         if let usage = lastUsage { title = usage.menuBarTitle + (lastError == nil ? "" : " !") }
@@ -468,6 +557,15 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         )
         appearanceItem.target = self
         menu.addItem(appearanceItem)
+
+        let touchIDItem = NSMenuItem(
+            title: tr(.touchIDToggle),
+            action: #selector(touchIDToggled(_:)),
+            keyEquivalent: ""
+        )
+        touchIDItem.target = self
+        touchIDItem.state = preferences.requiresTouchIDAtLaunch ? .on : .off
+        menu.addItem(touchIDItem)
         addRefreshIntervalMenu(to: menu)
         addLanguageMenu(to: menu)
 
@@ -480,6 +578,45 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         let quitItem = NSMenuItem(title: tr(.quit), action: #selector(quitClicked(_:)), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+        statusItem.menu = menu
+    }
+
+    private func drawLockedMenu() {
+        let menu = NSMenu(title: "MauQuota")
+        statusItem.button?.title = tr(.touchIDLocked)
+        statusItem.button?.image = nil
+        statusItem.button?.toolTip = tr(.touchIDLocked)
+
+        if isAuthenticating {
+            menu.addItem(disabled: tr(.touchIDUnlocking))
+        } else {
+            let unlock = NSMenuItem(
+                title: tr(.touchIDUnlock),
+                action: #selector(unlockClicked(_:)),
+                keyEquivalent: ""
+            )
+            unlock.target = self
+            menu.addItem(unlock)
+        }
+        if let unlockError {
+            menu.addItem(disabled: unlockError)
+        }
+        let toggle = NSMenuItem(
+            title: tr(.touchIDToggle),
+            action: #selector(touchIDToggled(_:)),
+            keyEquivalent: ""
+        )
+        toggle.target = self
+        toggle.state = .on
+        // Require a successful unlock before allowing protection to be disabled.
+        toggle.isEnabled = false
+        menu.addItem(toggle)
+        menu.addItem(.separator())
+        addLanguageMenu(to: menu)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: tr(.quit), action: #selector(quitClicked(_:)), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
         statusItem.menu = menu
     }
 

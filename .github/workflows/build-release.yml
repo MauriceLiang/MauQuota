@@ -66,6 +66,11 @@ jobs:
             *) echo "Architecture mismatch: host=$HOST_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
           esac
 
+      - name: Smoke-test native appearance window
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota" --smoke-appearance
+
       - name: Create DMG
         run: |
           set -euo pipefail
@@ -106,7 +111,7 @@ jobs:
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
           if [[ "$GITHUB_REF" == "refs/heads/feature/customizable-appearance" ]]; then
-            RELEASE_TAG="v${VERSION}-preview.2"
+            RELEASE_TAG="v${VERSION}-preview.3"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else

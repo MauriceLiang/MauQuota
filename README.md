@@ -23,7 +23,8 @@ MauQuota 常驻菜单栏，根据 ChatGPT 套餐显示 Codex 可用额度和重�
 
 - **原生轻量** —— Swift + AppKit 编译为单一可执行文件，不依赖 Codex CLI、Codex App Server、Node.js 或 npm。
 - **原生 ChatGPT 登录** —— 浏览器 OAuth Authorization Code + PKCE，使用本地回调接收授权结果，不要求用户输入账号密码。
-- **Keychain 凭据管理** —— Access Token、Refresh Token 和账号标识保存在 macOS Keychain，不读取或修改 <code>~/.codex/auth.json</code>。
+- **Keychain 凭据管理** —— Access Token、Refresh Token 和账号标识保存在 macOS Keychain；启动后首次读取成功会缓存于当前进程，避免每次刷新反复弹出 Keychain 授权窗口。不读取或修改 <code>~/.codex/auth.json</code>。
+- **可选 Touch ID 启动解锁** —— 菜单栏可开启「启动时使用 Touch ID 解锁」。每次启动先进行一次系统验证，成功后才会读取登录凭据；macOS 支持使用登录密码作为后备。默认关闭。
 - **直接额度查询** —— 使用 ChatGPT 后端接口获取 5 小时和每周额度，不启动外部进程。
 - **自动刷新 Token** —— Access Token 即将过期或服务端返回 401 时，使用 Refresh Token 更新凭据并重试一次。
 - **套餐感知额度指示** —— Plus 显示 5 小时与每周双环；Pro 100 / 200 / 500 不显示不存在的 5 小时额度，只展示每周额度。
@@ -96,6 +97,12 @@ GitHub Actions 会运行 Swift 测试，并分别构建 Apple Silicon（arm64）
 
 DMG 为 ad-hoc 签名、未经 Apple 公证，首次运行可能出现 Gatekeeper 提示。
 
+### Keychain 提示与 Touch ID
+
+- 2.1.0 以后，每次应用运行期间首次成功读取 Keychain 凭据后，后续额度刷新、重置卡查询和复制诊断信息均复用内存中的凭据；Token 刷新成功会同步更新 Keychain 与缓存。退出应用后缓存消失，凭据始终持久保存于 Keychain。
+- 「启动时使用 Touch ID 解锁」为**可选的应用级本地验证**，不是将 Keychain 凭据改存到文件，也不是用指纹替代 ChatGPT OAuth。选择启用后，MauQuota 在验证成功前不会自动读取 Keychain 或显示额度；支持 Touch ID 和 macOS 登录密码后备。关闭应用后下次启动需重新验证。
+- **重要限制：** 当前 GitHub DMG 为 ad-hoc 签名，更新后 macOS 可能把新二进制视为不同的 Keychain 客户端而要求再次输入登录密码并授权。这是系统的代码签名信任检查，Touch ID 应用解锁不能绕过它；要让不同版本之间的信任长期稳定，需要用同一开发者证书（例如 Developer ID）进行持续签名。请勿通过降低 Keychain 权限或把凭据明文落盘来规避系统提示。
+
 ## 使用
 
 1. 下载并启动 MauQuota。
@@ -122,6 +129,8 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 - 按套餐区分额度窗口：Plus 展示 5 小时与每周额度；Pro 100 / 200 / 500 仅展示每周额度。
 - Pro 账户不再绘制灰色的虚假 5 小时内环，也不显示不存在的 5 小时重置时间。
 - 增加 Plus / Pro 套餐识别及额度解析回归测试。
+- 修复外观设置窗口的 Auto Layout 约束激活时机错误，避免点击设置时直接退出。
+- 引入进程内 Keychain 凭据缓存，减少反复输入密码和点击「允许」的情况，并提供自愿启用的 Touch ID 启动解锁。
 
 **v2.0.0**
 

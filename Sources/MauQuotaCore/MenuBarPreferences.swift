@@ -7,6 +7,7 @@ public final class MenuBarPreferences {
     public static let presetRefreshMinutes = [1, 2, 5, 10, 15, 30, 60]
     private static let refreshKey = "refreshIntervalMinutes"
     private static let languageKey = "displayLanguage"
+    private static let touchIDKey = "requireTouchIDAtLaunch"
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
@@ -28,6 +29,13 @@ public final class MenuBarPreferences {
     public var language: DisplayLanguage {
         get { DisplayLanguage(rawValue: defaults.string(forKey: Self.languageKey) ?? "") ?? .system }
         set { defaults.set(newValue.rawValue, forKey: Self.languageKey) }
+    }
+
+    /// Optional one-time local verification per app launch. Off by default.
+    /// The OAuth token is still stored only in macOS Keychain.
+    public var requiresTouchIDAtLaunch: Bool {
+        get { defaults.bool(forKey: Self.touchIDKey) }
+        set { defaults.set(newValue, forKey: Self.touchIDKey) }
     }
 }
 
@@ -57,6 +65,8 @@ public enum MenuLocalization {
         case login, relogin, refresh, refreshing
         case ringToggle, numberColorToggle, numberColorEnabled, redNumberAlignmentCompensation
         case appearanceSettings
+        case touchIDToggle, touchIDUnlock, touchIDUnlocking, touchIDLocked
+        case touchIDReason, touchIDUnavailable
         case refreshInterval, customInterval, language
         case followSystem, simplifiedChinese, english, copyDiagnostics, version, quit
         case customIntervalTitle, customIntervalMessage, save, cancel
@@ -92,6 +102,12 @@ public enum MenuLocalization {
         case .numberColorEnabled: return chinese ? "启用彩色额度数字" : "Enable colored quota numbers"
         case .redNumberAlignmentCompensation: return chinese ? "红色数字视觉偏移补偿" : "Red number alignment compensation"
         case .appearanceSettings: return chinese ? "外观自定义…" : "Customize appearance…"
+        case .touchIDToggle: return chinese ? "启动时使用 Touch ID 解锁" : "Require Touch ID at launch"
+        case .touchIDUnlock: return chinese ? "使用 Touch ID 解锁…" : "Unlock with Touch ID…"
+        case .touchIDUnlocking: return chinese ? "等待系统验证…" : "Waiting for authentication…"
+        case .touchIDLocked: return chinese ? "MauQuota · 已锁定" : "MauQuota · Locked"
+        case .touchIDReason: return chinese ? "解锁 MauQuota，允许读取已保存的 ChatGPT 凭据" : "Unlock MauQuota to access your saved ChatGPT credentials"
+        case .touchIDUnavailable: return chinese ? "当前设备未设置 Touch ID，请先在系统设置中启用。" : "Touch ID is not configured on this Mac. Enable it in System Settings first."
         case .refreshInterval: return chinese ? "自动刷新间隔" : "Auto-refresh interval"
         case .customInterval: return chinese ? "自定义…" : "Custom…"
         case .language: return chinese ? "语言 / Language" : "Language / 语言"

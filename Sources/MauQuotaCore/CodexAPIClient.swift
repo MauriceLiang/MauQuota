@@ -350,7 +350,7 @@ public final class CodexAPIClient {
         self.session = URLSession(
             configuration: Self.makeSessionConfiguration(timeoutSeconds: timeout)
         )
-        self.credentialStore = KeychainCredentialStore()
+        self.credentialStore = SessionCredentialStore(underlying: KeychainCredentialStore())
         self.requestObserver = nil
     }
 

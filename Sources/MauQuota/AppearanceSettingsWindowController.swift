@@ -96,7 +96,8 @@ final class AppearanceSettingsWindowController: NSWindowController {
         footer.alignment = .centerY
         footer.distribution = .equalSpacing
         footer.spacing = 10
-        footer.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+        // Never activate an inter-view constraint before both views share
+        // a view hierarchy. AppKit raises NSGenericException otherwise.
 
         let reset = NSButton(
             title: isChinese ? "恢复默认配色" : "Reset colors",
@@ -111,6 +112,7 @@ final class AppearanceSettingsWindowController: NSWindowController {
         footer.addArrangedSubview(reset)
         footer.addArrangedSubview(close)
         root.addArrangedSubview(footer)
+        footer.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     }
 
     private func addSection(_ title: String, to root: NSStackView) {
