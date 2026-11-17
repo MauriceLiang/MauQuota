@@ -10,16 +10,6 @@ final class MenuBarPreferencesTests: XCTestCase {
         XCTAssertEqual(settings.language, .system)
     }
 
-    func testTouchIDProtectionIsOptInAndPersistsAcrossLaunches() throws {
-        let (settings, defaults) = try makeSettings()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        XCTAssertFalse(settings.requiresTouchIDAtLaunch)
-        settings.requiresTouchIDAtLaunch = true
-        XCTAssertTrue(MenuBarPreferences(defaults: defaults).requiresTouchIDAtLaunch)
-        settings.requiresTouchIDAtLaunch = false
-        XCTAssertFalse(MenuBarPreferences(defaults: defaults).requiresTouchIDAtLaunch)
-    }
-
     func testRefreshIntervalPersistsAndSupportsCustomValues() throws {
         let (settings, defaults) = try makeSettings()
         defer { defaults.removePersistentDomain(forName: suiteName) }

@@ -23,6 +23,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private let preferences = MenuBarPreferences()
     private let logger = Logger(subsystem: "dev.mau.mauquota", category: "usage")
     private var isSessionUnlocked = true
+    private var requiresStartupAuthentication = false
     private var isAuthenticating = false
     private var unlockError: String?
 
@@ -67,12 +68,20 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             button.imageScaling = .scaleProportionallyDown
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         }
-        isSessionUnlocked = !preferences.requiresTouchIDAtLaunch
+        // Automatically use Touch ID at launch on Macs where it is enrolled.
+        // Users do not have to enable a preference after starting the app.
+        let deviceContext = LAContext()
+        var biometricError: NSError?
+        let biometricsAvailable = deviceContext.canEvaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics, error: &biometricError
+        )
+        requiresStartupAuthentication = biometricsAvailable && deviceContext.biometryType == .touchID
+        isSessionUnlocked = !requiresStartupAuthentication
         drawMenu()
-        if isSessionUnlocked {
-            refresh()
-        } else {
+        if requiresStartupAuthentication {
             DispatchQueue.main.async { [weak self] in self?.requestLocalUnlock() }
+        } else {
+            refresh()
         }
         restartRefreshTimer()
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -106,51 +115,28 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in self?.requestLocalUnlock() }
     }
 
-    @objc private func touchIDToggled(_ sender: Any?) {
-        if preferences.requiresTouchIDAtLaunch {
-            preferences.requiresTouchIDAtLaunch = false
-            isSessionUnlocked = true
-            unlockError = nil
-            drawMenu()
-            if !hasChecked { refresh() }
-            return
-        }
-
-        // This optional per-launch protection must not silently fall back to
-        // password-only if the user explicitly selected Touch ID.
-        let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
-              context.biometryType == .touchID else {
-            let alert = NSAlert()
-            alert.messageText = tr(.touchIDUnavailable)
-            alert.addButton(withTitle: activeLanguage == .english ? "OK" : "确定")
-            NSApp.activate(ignoringOtherApps: true)
-            alert.runModal()
-            return
-        }
-        preferences.requiresTouchIDAtLaunch = true
-        isSessionUnlocked = false
-        DispatchQueue.main.async { [weak self] in self?.requestLocalUnlock() }
-        drawMenu()
-    }
-
     private func requestLocalUnlock() {
-        guard preferences.requiresTouchIDAtLaunch, !isSessionUnlocked,
+        guard requiresStartupAuthentication, !isSessionUnlocked,
               !isAuthenticating else { return }
         isAuthenticating = true
         unlockError = nil
         drawMenu()
 
         let context = LAContext()
+        let reason = tr(.touchIDReason)
         NSApp.activate(ignoringOtherApps: true)
+        // macOS prefers Touch ID (or paired Apple Watch) with password fallback.
+        // Do not start a second verification automatically if the user cancels.
         context.evaluatePolicy(.deviceOwnerAuthentication,
-                               localizedReason: tr(.touchIDReason)) { [weak self] success, error in
+                               localizedReason: reason) { [weak self] success, error in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isAuthenticating = false
-                guard self.preferences.requiresTouchIDAtLaunch else { return }
                 if success {
+                    // Hand the already authenticated context to the Security
+                    // framework for subsequent Keychain reads and writes.
+                    // Code-signing ACL consent is a separate OS decision.
+                    self.reader.useLocalAuthenticationContext(context)
                     self.isSessionUnlocked = true
                     self.unlockError = nil
                     self.drawMenu()
@@ -163,6 +149,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             }
         }
     }
+
     @objc private func quitClicked(_ sender: Any?) { NSApp.terminate(nil) }
     @objc private func loginClicked(_ sender: Any?) { login() }
 
@@ -558,14 +545,6 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         appearanceItem.target = self
         menu.addItem(appearanceItem)
 
-        let touchIDItem = NSMenuItem(
-            title: tr(.touchIDToggle),
-            action: #selector(touchIDToggled(_:)),
-            keyEquivalent: ""
-        )
-        touchIDItem.target = self
-        touchIDItem.state = preferences.requiresTouchIDAtLaunch ? .on : .off
-        menu.addItem(touchIDItem)
         addRefreshIntervalMenu(to: menu)
         addLanguageMenu(to: menu)
 
@@ -601,16 +580,6 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         if let unlockError {
             menu.addItem(disabled: unlockError)
         }
-        let toggle = NSMenuItem(
-            title: tr(.touchIDToggle),
-            action: #selector(touchIDToggled(_:)),
-            keyEquivalent: ""
-        )
-        toggle.target = self
-        toggle.state = .on
-        // Require a successful unlock before allowing protection to be disabled.
-        toggle.isEnabled = false
-        menu.addItem(toggle)
         menu.addItem(.separator())
         addLanguageMenu(to: menu)
         menu.addItem(.separator())

@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import Network
 import Security
+import LocalAuthentication
 import Darwin
 
 public struct CodexAccount: Equatable {
@@ -66,15 +67,33 @@ protocol CodexCredentialStore {
 private final class KeychainCredentialStore: CodexCredentialStore {
     private let service = "dev.mau.mauquota.chatgpt-oauth"
     private let account = "primary"
+    private let contextLock = NSLock()
+    private var authenticationContext: LAContext?
+
+    func setAuthenticationContext(_ context: LAContext?) {
+        contextLock.lock()
+        authenticationContext = context
+        contextLock.unlock()
+    }
+
+    private func withAuthenticationContext(_ query: [String: Any]) -> [String: Any] {
+        contextLock.lock()
+        let context = authenticationContext
+        contextLock.unlock()
+        guard let context else { return query }
+        var authenticated = query
+        authenticated[kSecUseAuthenticationContext as String] = context
+        return authenticated
+    }
 
     func load() throws -> CodexOAuthCredentials? {
-        let query: [String: Any] = [
+        let query = withAuthenticationContext([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+        ])
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
@@ -90,11 +109,11 @@ private final class KeychainCredentialStore: CodexCredentialStore {
 
     func save(_ credentials: CodexOAuthCredentials) throws {
         let data = try JSONEncoder().encode(credentials)
-        let query: [String: Any] = [
+        let query = withAuthenticationContext([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
-        ]
+        ])
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -113,11 +132,11 @@ private final class KeychainCredentialStore: CodexCredentialStore {
     }
 
     func delete() throws {
-        let query: [String: Any] = [
+        let query = withAuthenticationContext([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
-        ]
+        ])
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw CodexAPIClient.ClientError.keychain(status)
@@ -340,6 +359,7 @@ public final class CodexAPIClient {
     private let timeoutSeconds: TimeInterval
     private let session: URLSession
     private let credentialStore: CodexCredentialStore
+    private let keychainStore: KeychainCredentialStore?
     private let requestObserver: ((URLRequest) -> Void)?
     private let refreshLock = NSLock()
     private let baseURL = URL(string: "https://chatgpt.com/backend-api/")!
@@ -350,7 +370,9 @@ public final class CodexAPIClient {
         self.session = URLSession(
             configuration: Self.makeSessionConfiguration(timeoutSeconds: timeout)
         )
-        self.credentialStore = SessionCredentialStore(underlying: KeychainCredentialStore())
+        let keychainStore = KeychainCredentialStore()
+        self.keychainStore = keychainStore
+        self.credentialStore = SessionCredentialStore(underlying: keychainStore)
         self.requestObserver = nil
     }
 
@@ -376,7 +398,15 @@ public final class CodexAPIClient {
         self.timeoutSeconds = max(1, timeoutSeconds)
         self.session = session
         self.credentialStore = credentialStore
+        self.keychainStore = nil
         self.requestObserver = requestObserver
+    }
+
+    /// Reuse the already authenticated startup Touch ID / password context
+    /// for Keychain operations. This reduces duplicate biometric challenges,
+    /// but cannot override macOS code-signature trust prompts.
+    public func useLocalAuthenticationContext(_ context: LAContext) {
+        keychainStore?.setAuthenticationContext(context)
     }
 
     public var hasStoredCredentials: Bool {

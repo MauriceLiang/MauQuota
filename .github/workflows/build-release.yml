@@ -44,6 +44,12 @@ jobs:
         run: swift build --configuration release --product MauQuota
 
       - name: Assemble and sign app bundle
+        env:
+          # Optional long-lived Developer ID signing identity.
+          # Without all three repository secrets, development builds stay ad-hoc signed.
+          SIGNING_CERT_P12_BASE64: ${{ secrets.MAUQUOTA_SIGNING_P12_BASE64 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.MAUQUOTA_SIGNING_P12_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MAUQUOTA_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/MauQuota.app"
@@ -52,7 +58,26 @@ jobs:
           cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
           cp .build/release/MauQuota "$APP/Contents/MacOS/MauQuota"
           chmod 755 "$APP/Contents/MacOS/MauQuota"
-          codesign --force --sign - --timestamp=none "$APP"
+
+          if [[ -n "${SIGNING_CERT_P12_BASE64:-}" || -n "${SIGNING_CERT_PASSWORD:-}" || -n "${SIGNING_IDENTITY:-}" ]]; then
+            if [[ -z "${SIGNING_CERT_P12_BASE64:-}" || -z "${SIGNING_CERT_PASSWORD:-}" || -z "${SIGNING_IDENTITY:-}" ]]; then
+              echo "Developer ID signing requires all 3 MAUQUOTA_SIGNING_* secrets." >&2
+              exit 1
+            fi
+            KEYCHAIN="$RUNNER_TEMP/mauquota-build.keychain-db"
+            KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            printf '%s' "$SIGNING_CERT_P12_BASE64" | base64 -D > "$RUNNER_TEMP/mauquota-signing.p12"
+            security import "$RUNNER_TEMP/mauquota-signing.p12" -k "$KEYCHAIN" -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            codesign --force --sign "$SIGNING_IDENTITY" --keychain "$KEYCHAIN" --options runtime --timestamp=none "$APP"
+            echo "Signed with stable certificate-based identity."
+          else
+            codesign --force --sign - --timestamp=none "$APP"
+            echo "Warning: ad-hoc signing may trigger new Keychain trust prompts after each update."
+          fi
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Verify binary architecture
@@ -111,7 +136,7 @@ jobs:
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
           if [[ "$GITHUB_REF" == "refs/heads/feature/customizable-appearance" ]]; then
-            RELEASE_TAG="v${VERSION}-preview.3"
+            RELEASE_TAG="v${VERSION}-preview.4"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else
