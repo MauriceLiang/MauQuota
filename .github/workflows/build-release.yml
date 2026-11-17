@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
           if [[ "$GITHUB_REF" == "refs/heads/feature/customizable-appearance" ]]; then
-            RELEASE_TAG="v${VERSION}-preview.1"
+            RELEASE_TAG="v${VERSION}-preview.2"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else

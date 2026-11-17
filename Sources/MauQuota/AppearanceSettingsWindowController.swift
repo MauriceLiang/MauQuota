@@ -24,6 +24,9 @@ final class AppearanceSettingsWindowController: NSWindowController {
         )
         window.title = language == .simplifiedChinese ? "外观自定义" : "Customize Appearance"
         window.center()
+        // Keep the window on the active Space, including when an app is fullscreen.
+        // Retain the normal window level so it does not permanently float over other apps.
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init(window: window)
         window.isReleasedWhenClosed = false
         buildInterface()
@@ -34,8 +37,18 @@ final class AppearanceSettingsWindowController: NSWindowController {
     }
 
     func present() {
-        showWindow(nil)
+        guard let window else { return }
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        // Accessory (LSUIElement) apps do not become foreground applications
+        // automatically when an NSStatusItem action creates a normal NSWindow.
         NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
+        // In case activation hasn't completed yet, explicitly put this window
+        // ahead of the previously active application's normal-level windows.
+        window.orderFrontRegardless()
     }
 
     private func buildInterface() {

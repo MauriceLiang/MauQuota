@@ -106,18 +106,30 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func appearanceSettingsClicked(_ sender: Any?) {
-        if let controller = appearanceSettingsWindowController {
-            controller.present()
-            return
+        // Status-bar menu items can fire while the menu is still tracking.
+        // Present on the next main run-loop iteration so the menu finishes dismissing.
+        logger.info("外观自定义菜单已点击")
+        DispatchQueue.main.async { [weak self] in
+            self?.showAppearanceSettingsWindow()
         }
-        let controller = AppearanceSettingsWindowController(
-            settings: appearanceSettings,
-            language: activeLanguage
-        ) { [weak self] in
-            self?.drawMenu()
+    }
+
+    private func showAppearanceSettingsWindow() {
+        let controller: AppearanceSettingsWindowController
+        if let existing = appearanceSettingsWindowController {
+            controller = existing
+        } else {
+            let created = AppearanceSettingsWindowController(
+                settings: appearanceSettings,
+                language: activeLanguage
+            ) { [weak self] in
+                self?.drawMenu()
+            }
+            appearanceSettingsWindowController = created
+            controller = created
         }
-        appearanceSettingsWindowController = controller
         controller.present()
+        logger.info("外观自定义窗口显示状态：\(controller.window?.isVisible ?? false)")
     }
 
     @objc private func coloredRingToggled(_ sender: Any?) {
