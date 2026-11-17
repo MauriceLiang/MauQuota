@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   test:
-    if: github.event_name != 'push' || github.event.head_commit.message != 'chore: cleanup abandoned MauQuota previews [cleanup-only]'
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[cleanup-only]') }}
     name: Test
     runs-on: macos-15-intel
     timeout-minutes: 20
@@ -198,7 +198,7 @@ jobs:
 
   cleanup-abandoned:
     name: Clean abandoned preview releases and artifacts
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: cleanup abandoned MauQuota previews [cleanup-only]'
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[cleanup-only]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
