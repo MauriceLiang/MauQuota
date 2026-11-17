@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main, feature/native-oauth-direct-api]
+    branches: [main]
     tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   test:
+    if: github.event_name != 'push' || github.event.head_commit.message != 'chore: cleanup abandoned MauQuota previews [cleanup-only]'
     name: Test
     runs-on: macos-15-intel
     timeout-minutes: 20
@@ -194,3 +195,65 @@ jobs:
             exit 1
           fi
           echo "Preview releases, tags, and branches have been cleaned up."
+
+  cleanup-abandoned:
+    name: Clean abandoned preview releases and artifacts
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: cleanup abandoned MauQuota previews [cleanup-only]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Delete preview releases and tags, non-main branches, and Actions artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "Cleanup of canceled MauQuota 2.1.0 development."
+          echo "Stable GitHub Releases and the main branch are explicitly protected."
+
+          PREVIEW_TAGS="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true and (.tagName | contains("-preview."))) | .tagName')"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Deleting preview release and tag: $tag"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done <<< "$PREVIEW_TAGS"
+
+          # Delete orphaned preview tags that no longer have a Release.
+          ORPHAN_PREVIEW_REFS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[] | select(.ref | contains("-preview.")) | .ref')"
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            echo "Deleting orphaned preview tag ref: $ref"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/${ref#refs/}"
+          done <<< "$ORPHAN_PREVIEW_REFS"
+
+          BRANCHES="$(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name | select(. != "main")')"
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
+            echo "Deleting non-main branch: $branch"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch"
+          done <<< "$BRANCHES"
+
+          # Remove temporary ZIP artifacts from all Actions runs.
+          # Stable Release assets are separate and intentionally preserved.
+          ARTIFACT_IDS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id')"
+          deleted=0
+          while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            deleted=$((deleted + 1))
+          done <<< "$ARTIFACT_IDS"
+          echo "Deleted $deleted ephemeral Actions artifacts."
+
+          remaining_branches="$(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name | select(. != "main")')"
+          remaining_previews="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true and (.tagName | contains("-preview."))) | .tagName')"
+          remaining_tags="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[] | select(.ref | contains("-preview.")) | .ref')"
+          remaining_artifacts="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id')"
+          if [[ -n "$remaining_branches" || -n "$remaining_previews" || -n "$remaining_tags" || -n "$remaining_artifacts" ]]; then
+            echo "Cleanup incomplete. Non-main branches: $remaining_branches" >&2
+            echo "Preview releases: $remaining_previews; preview tags: $remaining_tags" >&2
+            echo "Remaining Actions artifacts: $remaining_artifacts" >&2
+            exit 1
+          fi
+          echo "Cleanup verified: only main branch, no previews, no Actions artifacts. Stable releases preserved."
