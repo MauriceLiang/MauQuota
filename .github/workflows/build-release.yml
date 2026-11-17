@@ -90,7 +90,7 @@ jobs:
 
   release:
     name: Release
-    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0'))
+    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')) || (github.ref == 'refs/heads/feature/customizable-appearance' && github.event_name == 'push')
     needs: build
     runs-on: macos-15
     timeout-minutes: 15
@@ -105,7 +105,9 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/feature/customizable-appearance" ]]; then
+            RELEASE_TAG="v${VERSION}-preview.1"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else
             RELEASE_TAG="v$VERSION"
@@ -152,12 +154,22 @@ jobs:
             echo "Release $RELEASE_TAG already exists; skip duplicate creation."
           else
             NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
+            RELEASE_FLAGS=()
+            if [[ "$RELEASE_TAG" == *-preview.* ]]; then
+              RELEASE_FLAGS+=(--prerelease)
+              # Use the full-version notes for the preview build if no preview-specific file exists.
+              if [ ! -f "$NOTES_FILE" ]; then
+                NOTES_FILE=".github/release-notes/v${VERSION}.md"
+              fi
+            fi
             if [ -f "$NOTES_FILE" ]; then
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
+                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" \
+                "${RELEASE_FLAGS[@]}" --notes-file "$NOTES_FILE"
             else
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --generate-notes
+                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" \
+                "${RELEASE_FLAGS[@]}" --generate-notes
             fi
           fi
 
