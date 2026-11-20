@@ -16,6 +16,26 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
     private var lastError: String?
     private var isLoginError = false
     private var resetCreditsWindowController: ResetCreditsWindowController?
+
+    // Keep one AppKit menu and update its contents in place. Rebuilding the entire
+    // NSMenu tree on every polling tick caused unnecessary long-lived allocations.
+    private enum MenuRow: Hashable {
+        case progress, account, email, signedOut, usageSeparator
+        case shortRemaining, shortReset, longRemaining, longReset, updatedAt
+        case errorSeparator, error, login, refresh, reset
+        case coloredRing, numberColors, numbersEnabled, redAlignment
+        case intervalRoot, intervalCustom, languageRoot
+        case diagnostics, version, quit
+    }
+    private var persistentMenu: NSMenu?
+    private var menuRows: [MenuRow: NSMenuItem] = [:]
+    private var intervalRows: [Int: NSMenuItem] = [:]
+    private var languageRows: [String: NSMenuItem] = [:]
+    private var displayedRingState: QuotaRingState?
+    private var displayedRingVisible = false
+    private var displayedTitle = ""
+    private var displayedColoredNumbers = false
+    private var displayedRedCompensation = false
     private let reader = CodexAPIClient()
     private let appearanceSettings = MenuBarAppearanceSettings()
     private let preferences = MenuBarPreferences()
@@ -304,9 +324,103 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         return result
     }
 
-    private func drawMenu() {
-        guard statusItem != nil else { return }
+    private func addRow(_ key: MenuRow, to menu: NSMenu,
+                        title: String = "", action: Selector? = nil,
+                        keyEquivalent: String = "", informational: Bool = false) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        if let action { item.action = action; item.target = self }
+        if informational {
+            item.view = InformationalMenuItemView(title: title, font: menu.font)
+            item.isEnabled = false
+        }
+        menu.addItem(item)
+        menuRows[key] = item
+    }
+
+    private func addSeparator(_ key: MenuRow, to menu: NSMenu) {
+        let item = NSMenuItem.separator()
+        menu.addItem(item)
+        menuRows[key] = item
+    }
+
+    /// Static layout and action targets are allocated once, including nested submenus.
+    /// All ordinary refreshes update the same NSMenuItem and NSView instances.
+    private func buildMenu() {
+        guard persistentMenu == nil else { return }
         let menu = NSMenu(title: "MauQuota")
+        addRow(.progress, to: menu)
+        addRow(.account, to: menu, informational: true)
+        addRow(.email, to: menu, informational: true)
+        addRow(.signedOut, to: menu, informational: true)
+        addSeparator(.usageSeparator, to: menu)
+        addRow(.shortRemaining, to: menu, informational: true)
+        addRow(.shortReset, to: menu, informational: true)
+        addRow(.longRemaining, to: menu, informational: true)
+        addRow(.longReset, to: menu, informational: true)
+        addRow(.updatedAt, to: menu, informational: true)
+        addSeparator(.errorSeparator, to: menu)
+        addRow(.error, to: menu)
+        menu.addItem(.separator())
+        addRow(.login, to: menu, action: #selector(loginClicked(_:)), keyEquivalent: "l")
+        addRow(.refresh, to: menu, action: #selector(refreshClicked(_:)), keyEquivalent: "r")
+        addRow(.reset, to: menu, action: #selector(resetCreditsClicked(_:)))
+        menu.addItem(.separator())
+        addRow(.coloredRing, to: menu, action: #selector(coloredRingToggled(_:)))
+
+        let numberMenu = NSMenu(title: tr(.numberColorToggle))
+        addRow(.numbersEnabled, to: numberMenu, action: #selector(coloredNumbersToggled(_:)))
+        addRow(.redAlignment, to: numberMenu,
+               action: #selector(redNumberAlignmentCompensationToggled(_:)))
+        addRow(.numberColors, to: menu)
+        menuRows[.numberColors]?.submenu = numberMenu
+
+        addRefreshIntervalMenu(to: menu)
+        addLanguageMenu(to: menu)
+        menu.addItem(.separator())
+        addRow(.diagnostics, to: menu, action: #selector(copyDiagnosisClicked(_:)))
+        menu.addItem(.separator())
+        addRow(.version, to: menu)
+        addRow(.quit, to: menu, action: #selector(quitClicked(_:)), keyEquivalent: "q")
+
+        // Keep the existing menu attached for the entire app lifetime.
+        persistentMenu = menu
+        statusItem.menu = menu
+    }
+
+    private func setMenuText(_ row: MenuRow, _ value: String?) {
+        guard let item = menuRows[row] else { return }
+        item.isHidden = (value == nil)
+        guard let value, item.title != value else { return }
+        item.title = value
+        (item.view as? InformationalMenuItemView)?.setTitle(value)
+    }
+
+    private func resetLabel(for window: QuotaWindow) -> String {
+        guard let date = window.resetsAt else {
+            return "    " + tr(.resetAt) + tr(.notProvided)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = activeLanguage.locale
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return "    " + tr(.resetAt) + formatter.string(from: date)
+    }
+
+    private func setQuotaRows(_ window: QuotaWindow?,
+                              remaining: MenuRow, reset: MenuRow) {
+        guard let window else {
+            setMenuText(remaining, nil)
+            setMenuText(reset, nil)
+            return
+        }
+        setMenuText(remaining, "\(window.label) \(tr(.remaining)) \(window.remainingPercent)%")
+        setMenuText(reset, resetLabel(for: window))
+    }
+
+    private func drawMenu() {
+        guard let button = statusItem?.button else { return }
+        buildMenu()
+
         let title: String
         if let usage = lastUsage { title = usage.menuBarTitle + (lastError == nil ? "" : " !") }
         else if isLoggingIn { title = tr(.loggingInTitle) }
@@ -314,116 +428,109 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         else if hasChecked && lastAccount == nil && lastError == nil { title = tr(.loggedOutTitle) }
         else { title = tr(.errorTitle) }
 
-        if let button = statusItem.button {
-            button.title = title // Reset prior colors and retain the system text style.
-            if let usage = lastUsage, appearanceSettings.showsColoredNumbers {
+        let ringState = QuotaRingState(usage: lastUsage)
+        let coloredNumbers = appearanceSettings.showsColoredNumbers
+        let redCompensation = appearanceSettings.compensatesRedNumberAlignment
+        let ringVisible = appearanceSettings.showsColoredRing
+        let ringChanged = displayedRingState != ringState
+
+        // Avoid reallocating attributed strings and 21pt NSImage on unchanged quotas.
+        if displayedTitle != title || displayedColoredNumbers != coloredNumbers ||
+            displayedRedCompensation != redCompensation || ringChanged {
+            button.title = title
+            if let usage = lastUsage, coloredNumbers {
                 button.attributedTitle = Self.coloredTitle(
                     button.attributedTitle, usage: usage,
-                    compensatesRedAlignment: appearanceSettings.compensatesRedNumberAlignment
+                    compensatesRedAlignment: redCompensation
                 )
             }
+            displayedTitle = title
+            displayedColoredNumbers = coloredNumbers
+            displayedRedCompensation = redCompensation
         }
-        statusItem.button?.imagePosition = .imageLeading
-        statusItem.button?.image = appearanceSettings.showsColoredRing
-            ? QuotaRingIcon.render(QuotaRingState(usage: lastUsage)) : nil
-        statusItem.button?.toolTip = !appearanceSettings.showsColoredRing
-            ? tr(.tooltipHidden)
+        if ringChanged || displayedRingVisible != ringVisible {
+            button.image = ringVisible ? QuotaRingIcon.render(ringState) : nil
+            displayedRingVisible = ringVisible
+        }
+        displayedRingState = ringState
+        button.toolTip = !ringVisible ? tr(.tooltipHidden)
             : (lastUsage == nil ? tr(.tooltipUnknown) : tr(.tooltipRings))
 
-        if isLoggingIn {
-            menu.addItem(disabled: tr(.authorizeInBrowser))
-        } else if isFetching {
-            menu.addItem(disabled: tr(.checkingStatus))
-        }
+        setMenuText(.progress, isLoggingIn ? tr(.authorizeInBrowser)
+            : (isFetching ? tr(.checkingStatus) : nil))
+        menuRows[.progress]?.isEnabled = false
 
         if let account = lastAccount {
-            addInformationalItem(tr(.account) + account.label, to: menu)
-            if let email = account.email, !email.isEmpty {
-                addInformationalItem("    \(email)", to: menu)
-            }
-        } else if hasChecked && lastError == nil {
-            addInformationalItem(tr(.loggedOutDescription), to: menu)
+            setMenuText(.account, tr(.account) + account.label)
+            setMenuText(.email, account.email.flatMap { $0.isEmpty ? nil : "    " + $0 })
+        } else {
+            setMenuText(.account, nil)
+            setMenuText(.email, nil)
         }
+        setMenuText(.signedOut, lastAccount == nil && hasChecked && lastError == nil
+            ? tr(.loggedOutDescription) : nil)
 
-        if let usage = lastUsage {
-            menu.addItem(.separator())
-            if let short = usage.shortWindow { addDetail(short, to: menu) }
-            if let long = usage.longWindow { addDetail(long, to: menu) }
+        let usage = lastUsage
+        menuRows[.usageSeparator]?.isHidden = usage == nil
+        setQuotaRows(usage?.shortWindow, remaining: .shortRemaining, reset: .shortReset)
+        setQuotaRows(usage?.longWindow, remaining: .longRemaining, reset: .longReset)
+        if let usage {
             let date = DateFormatter()
             date.locale = activeLanguage.locale
             date.dateStyle = .none
             date.timeStyle = .medium
-            addInformationalItem(tr(.updatedAt) + date.string(from: usage.fetchedAt), to: menu)
+            setMenuText(.updatedAt, tr(.updatedAt) + date.string(from: usage.fetchedAt))
+        } else {
+            setMenuText(.updatedAt, nil)
         }
-        if let error = lastError {
-            menu.addItem(.separator())
-            menu.addItem(disabled: tr(.error) + (displayedError() ?? localizedErrorString(error)))
+
+        menuRows[.errorSeparator]?.isHidden = lastError == nil
+        setMenuText(.error, lastError.map { tr(.error) + (displayedError() ?? localizedErrorString($0)) })
+        menuRows[.error]?.isEnabled = false
+
+        menuRows[.login]?.title = lastAccount == nil ? tr(.login) : tr(.relogin)
+        menuRows[.login]?.isEnabled = !isLoggingIn && !isFetching
+        menuRows[.refresh]?.title = isFetching ? tr(.refreshing) : tr(.refresh)
+        menuRows[.refresh]?.isEnabled = !isFetching && !isLoggingIn
+        menuRows[.reset]?.title = activeLanguage == .simplifiedChinese
+            ? "使用限额重置…" : "Usage limit resets…"
+        menuRows[.reset]?.isEnabled = lastAccount?.isChatGPT == true && !isFetching && !isLoggingIn
+
+        menuRows[.coloredRing]?.title = tr(.ringToggle)
+        menuRows[.coloredRing]?.state = ringVisible ? .on : .off
+        menuRows[.numberColors]?.title = tr(.numberColorToggle)
+        menuRows[.numbersEnabled]?.title = tr(.numberColorEnabled)
+        menuRows[.numbersEnabled]?.state = coloredNumbers ? .on : .off
+        menuRows[.redAlignment]?.title = tr(.redNumberAlignmentCompensation)
+        menuRows[.redAlignment]?.state = redCompensation ? .on : .off
+        menuRows[.redAlignment]?.isEnabled = coloredNumbers
+
+        let interval = preferences.refreshIntervalMinutes
+        menuRows[.intervalRoot]?.title = "\(tr(.refreshInterval)) (\(interval) min)"
+        for (minutes, item) in intervalRows {
+            item.state = minutes == interval ? .on : .off
         }
-        menu.addItem(.separator())
+        let custom = !MenuBarPreferences.presetRefreshMinutes.contains(interval)
+        menuRows[.intervalCustom]?.title = tr(.customInterval) + (custom ? " (\(interval) min)" : "")
+        menuRows[.intervalCustom]?.state = custom ? .on : .off
 
-        let loginItem = NSMenuItem(
-            title: lastAccount == nil ? tr(.login) : tr(.relogin),
-            action: #selector(loginClicked(_:)), keyEquivalent: "l"
-        )
-        loginItem.target = self
-        loginItem.isEnabled = !isLoggingIn && !isFetching
-        menu.addItem(loginItem)
+        menuRows[.languageRoot]?.title = tr(.language)
+        for language in DisplayLanguage.allCases {
+            let item = languageRows[language.rawValue]
+            let key: MenuLocalization.Key
+            switch language {
+            case .system: key = .followSystem
+            case .simplifiedChinese: key = .simplifiedChinese
+            case .english: key = .english
+            }
+            item?.title = tr(key)
+            item?.state = preferences.language == language ? .on : .off
+        }
 
-        let refreshItem = NSMenuItem(
-            title: isFetching ? tr(.refreshing) : tr(.refresh),
-            action: #selector(refreshClicked(_:)), keyEquivalent: "r"
-        )
-        refreshItem.target = self
-        refreshItem.isEnabled = !isFetching && !isLoggingIn
-        menu.addItem(refreshItem)
-
-        let resetItem = NSMenuItem(
-            title: activeLanguage == .simplifiedChinese ? "使用限额重置…" : "Usage limit resets…",
-            action: #selector(resetCreditsClicked(_:)),
-            keyEquivalent: ""
-        )
-        resetItem.target = self
-        resetItem.isEnabled = lastAccount?.isChatGPT == true && !isFetching && !isLoggingIn
-        menu.addItem(resetItem)
-
-        menu.addItem(.separator())
-        let coloredRingItem = NSMenuItem(
-            title: tr(.ringToggle), action: #selector(coloredRingToggled(_:)), keyEquivalent: ""
-        )
-        coloredRingItem.target = self
-        coloredRingItem.state = appearanceSettings.showsColoredRing ? .on : .off
-        menu.addItem(coloredRingItem)
-        let numberColorMenu = NSMenu(title: tr(.numberColorToggle))
-        let coloredNumbersItem = NSMenuItem(
-            title: tr(.numberColorEnabled), action: #selector(coloredNumbersToggled(_:)), keyEquivalent: ""
-        )
-        coloredNumbersItem.target = self
-        coloredNumbersItem.state = appearanceSettings.showsColoredNumbers ? .on : .off
-        numberColorMenu.addItem(coloredNumbersItem)
-        let alignmentCompensationItem = NSMenuItem(
-            title: tr(.redNumberAlignmentCompensation),
-            action: #selector(redNumberAlignmentCompensationToggled(_:)), keyEquivalent: ""
-        )
-        alignmentCompensationItem.target = self
-        alignmentCompensationItem.state = appearanceSettings.compensatesRedNumberAlignment ? .on : .off
-        alignmentCompensationItem.isEnabled = appearanceSettings.showsColoredNumbers
-        numberColorMenu.addItem(alignmentCompensationItem)
-        let numberColorItem = NSMenuItem(title: tr(.numberColorToggle), action: nil, keyEquivalent: "")
-        numberColorItem.submenu = numberColorMenu
-        menu.addItem(numberColorItem)
-        addRefreshIntervalMenu(to: menu)
-        addLanguageMenu(to: menu)
-
-        menu.addItem(.separator())
-        let copyItem = NSMenuItem(title: tr(.copyDiagnostics), action: #selector(copyDiagnosisClicked(_:)), keyEquivalent: "")
-        copyItem.target = self
-        menu.addItem(copyItem)
-        menu.addItem(.separator())
-        menu.addItem(disabled: tr(.version))
-        let quitItem = NSMenuItem(title: tr(.quit), action: #selector(quitClicked(_:)), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-        statusItem.menu = menu
+        menuRows[.diagnostics]?.title = tr(.copyDiagnostics)
+        menuRows[.version]?.title = tr(.version)
+        menuRows[.version]?.isEnabled = false
+        menuRows[.quit]?.title = tr(.quit)
     }
 
     private func addRefreshIntervalMenu(to menu: NSMenu) {
@@ -435,6 +542,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             item.representedObject = minutes
             item.state = minutes == selected ? .on : .off
             intervalMenu.addItem(item)
+            intervalRows[minutes] = item
         }
         intervalMenu.addItem(.separator())
         let isCustom = !MenuBarPreferences.presetRefreshMinutes.contains(selected)
@@ -443,9 +551,11 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         custom.target = self
         custom.state = isCustom ? .on : .off
         intervalMenu.addItem(custom)
+        menuRows[.intervalCustom] = custom
         let root = NSMenuItem(title: "\(tr(.refreshInterval)) (\(selected) min)", action: nil, keyEquivalent: "")
         root.submenu = intervalMenu
         menu.addItem(root)
+        menuRows[.intervalRoot] = root
     }
 
     private func addLanguageMenu(to menu: NSMenu) {
@@ -462,10 +572,12 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             item.representedObject = language.rawValue
             item.state = preferences.language == language ? .on : .off
             languageMenu.addItem(item)
+            languageRows[language.rawValue] = item
         }
         let root = NSMenuItem(title: tr(.language), action: nil, keyEquivalent: "")
         root.submenu = languageMenu
         menu.addItem(root)
+        menuRows[.languageRoot] = root
     }
 
     /// Core errors are emitted in Chinese by the upstream reader; translate common
@@ -507,29 +619,13 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         return translations[message] ?? message
     }
 
-    private func addInformationalItem(_ title: String, to menu: NSMenu) {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.view = InformationalMenuItemView(title: title, font: menu.font)
-        item.isEnabled = false
-        menu.addItem(item)
-    }
 
-    private func addDetail(_ window: QuotaWindow, to menu: NSMenu) {
-        addInformationalItem("\(window.label) \(tr(.remaining)) \(window.remainingPercent)%", to: menu)
-        let reset: String
-        if let resetsAt = window.resetsAt {
-            let formatter = DateFormatter()
-            formatter.locale = activeLanguage.locale
-            formatter.dateStyle = .short
-            formatter.timeStyle = .short
-            reset = formatter.string(from: resetsAt)
-        } else { reset = tr(.notProvided) }
-        addInformationalItem("    \(tr(.resetAt))\(reset)", to: menu)
-    }
 }
 
 /// A menu row that draws its own text, bypassing AppKit's disabled-item dimming.
 private final class InformationalMenuItemView: NSView {
+    private let label: NSTextField
+
     init(title: String, font: NSFont) {
         let label = NSTextField(labelWithString: title)
         label.font = font
@@ -540,6 +636,7 @@ private final class InformationalMenuItemView: NSView {
         label.drawsBackground = false
         label.sizeToFit()
 
+        self.label = label
         let rowHeight: CGFloat = 28
         let leadingInset: CGFloat = 30
         let trailingInset: CGFloat = 12
@@ -560,15 +657,17 @@ private final class InformationalMenuItemView: NSView {
         addSubview(label)
     }
 
+    func setTitle(_ text: String) {
+        guard label.stringValue != text else { return }
+        label.stringValue = text
+        label.sizeToFit()
+        // Preserve the original custom informational-row sizing and alignment.
+        frame.size.width = 30 + label.frame.width + 12
+        label.frame.origin = NSPoint(x: 30, y: (28 - label.frame.height) / 2)
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 }
 
-private extension NSMenu {
-    func addItem(disabled title: String) {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        addItem(item)
-    }
-}
