@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-black">
+  <img alt="Version 2.0.1" src="https://img.shields.io/badge/version-2.0.1-black">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -113,6 +113,14 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 核心逻辑（直接额度响应解析、OAuth PKCE、Token 刷新、Keychain 凭据管理和重置请求映射）均有单元测试覆盖。网络测试使用本地 URLProtocol Stub，不会消耗真实额度或重置卡。
 
 ## 版本记录
+
+**v2.0.1**
+
+- 复用菜单、子菜单和信息展示行，避免自动刷新时重新创建整套 AppKit 菜单。
+- 仅在额度变化或圆环设置变更时重新绘制圆环。
+- 未变化的菜单栏标题不再重复生成富文本，减少临时对象分配。
+- 保持 OAuth 登录、Keychain、重置卡、语言及刷新功能不变。
+- 内存优化预览版经过实机验证，用户报告长期运行占用稳定在约 17–20 MB，实际数值因设备和使用方式而异。
 
 **v2.0.0**
 

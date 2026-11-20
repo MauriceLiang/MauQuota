@@ -16,7 +16,6 @@ concurrency:
 
 jobs:
   test:
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[cleanup-only]') }}
     name: Test
     runs-on: macos-15-intel
     timeout-minutes: 20
@@ -28,13 +27,16 @@ jobs:
 
   build:
     name: Build (${{ matrix.arch }})
-    # For the one-time 2.0.0 promotion, reuse the verified arm64 artifact from PR run #63.
-    # The PR and main commits have identical Git trees. Future releases build both architectures.
+    # Cross-compile arm64 on Intel macOS runner; validate the binary architecture.
     needs: test
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')) && '[{"runner":"macos-15-intel","arch":"x86_64"}]' || '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') }}
+        include:
+          - runner: macos-15-intel
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -42,7 +44,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build release binary
-        run: swift build --configuration release --product MauQuota
+        run: swift build --configuration release --arch ${{ matrix.arch }} --product MauQuota
 
       - name: Assemble and sign app bundle
         run: |
@@ -51,7 +53,8 @@ jobs:
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp Resources/Info.plist "$APP/Contents/Info.plist"
           cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-          cp .build/release/MauQuota "$APP/Contents/MacOS/MauQuota"
+          BIN_DIR="$(swift build --configuration release --arch ${{ matrix.arch }} --show-bin-path)"
+          cp "$BIN_DIR/MauQuota" "$APP/Contents/MacOS/MauQuota"
           chmod 755 "$APP/Contents/MacOS/MauQuota"
           codesign --force --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
@@ -59,19 +62,19 @@ jobs:
       - name: Verify binary architecture
         run: |
           set -euo pipefail
-          HOST_ARCH="$(uname -m)"
+          EXPECTED_ARCH="${{ matrix.arch }}"
           BINARY="$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota"
           BINARY_ARCHS="$(lipo -archs "$BINARY")"
           case " $BINARY_ARCHS " in
-            *" $HOST_ARCH "*) ;;
-            *) echo "Architecture mismatch: host=$HOST_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
+            *" $EXPECTED_ARCH "*) ;;
+            *) echo "Architecture mismatch: expected=$EXPECTED_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
           esac
 
       - name: Create DMG
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          ARCH="$(uname -m)"
+          ARCH="${{ matrix.arch }}"
           STAGING="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGING" dist
           ditto "$RUNNER_TEMP/MauQuota.app" "$STAGING/MauQuota.app"
@@ -91,9 +94,9 @@ jobs:
 
   release:
     name: Release
-    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0'))
+    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1'))
     needs: build
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 15
     permissions:
       contents: write
@@ -112,9 +115,6 @@ jobs:
             RELEASE_TAG="v$VERSION"
           fi
           TAG_VERSION="${RELEASE_TAG#v}"
-          if [[ "$TAG_VERSION" == *-preview.* ]]; then
-            TAG_VERSION="${TAG_VERSION%%-preview.*}"
-          fi
           if [ "$VERSION" != "$TAG_VERSION" ]; then
             echo "Release tag $RELEASE_TAG does not match Info.plist version $VERSION" >&2
             exit 1
@@ -126,15 +126,6 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-
-      - name: Download previously validated Apple Silicon DMG for 2.0.0
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')
-        uses: actions/download-artifact@v8
-        with:
-          name: MauQuota-macos-arm64
-          path: artifacts
-          run-id: 43882752857
-          github-token: ${{ github.token }}
 
       - name: Verify both release installers
         run: |
@@ -162,36 +153,39 @@ jobs:
             fi
           fi
 
-      - name: Clean up superseded preview releases and branches
-        if: (github.ref == 'refs/tags/v2.0.0') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0'))
+      - name: Verify stable Release and its installers before cleanup
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          FAILED=0
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          test "$(gh release view "v$VERSION" --json isPrerelease --jq '.isPrerelease')" = "false"
+          for file in "MauQuota-${VERSION}-macos-arm64.dmg" "MauQuota-${VERSION}-macos-x86_64.dmg" "SHA256SUMS"; do
+            gh release view "v$VERSION" --json assets --jq '.assets[].name' | grep -Fxq "$file"
+          done
 
+      - name: Delete superseded preview Release, tags and branch
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           PREVIEW_TAGS="$(gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true and (.tagName | contains("-preview."))) | .tagName')"
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
-            echo "Removing preview release and tag: $tag"
-            if ! gh release delete "$tag" --cleanup-tag --yes; then
-              echo "Failed to remove preview release: $tag" >&2
-              FAILED=1
-            fi
+            echo "Deleting preview release and tag: $tag"
+            gh release delete "$tag" --cleanup-tag --yes
           done <<< "$PREVIEW_TAGS"
 
-          OBSOLETE_BRANCHES="$(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name | select(startswith("preview/") or . == "release/enable-v1.9.0-main-publish" or . == "feature/native-oauth-direct-api" or . == "perf/reduce-memory-footprint")')"
-          while IFS= read -r branch; do
-            [ -n "$branch" ] || continue
-            echo "Removing obsolete branch: $branch"
-            if ! gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch"; then
-              echo "Failed to remove obsolete branch: $branch" >&2
-              FAILED=1
-            fi
-          done <<< "$OBSOLETE_BRANCHES"
+          # Remove orphan preview tags even if their Release was previously deleted.
+          ORPHAN_REFS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[].ref | select(contains("-preview."))')"
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            echo "Deleting preview tag: $ref"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/$ref"
+          done <<< "$ORPHAN_REFS"
 
-          if [ "$FAILED" -ne 0 ]; then
-            echo "One or more preview artifacts could not be removed." >&2
-            exit 1
-          fi
-          echo "Preview releases, tags, and branches have been cleaned up."
+          echo "Deleting merged preview/memory-stability-v2.0.1 branch"
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/preview/memory-stability-v2.0.1"
+          echo "Stable Release and preview cleanup completed."
