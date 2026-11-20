@@ -34,7 +34,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0')) && '[{"runner":"macos-15-intel","arch":"x86_64"}]' || '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') }}
+        # Preview uses Intel macOS hosts to compile both architectures because
+        # hosted arm64 runners may remain queued. Stable releases stay native.
+        include: ${{ fromJSON((github.ref == 'refs/heads/preview/memory-stability-v2.0.1' && '[{"runner":"macos-15-intel","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.0') && '[{"runner":"macos-15-intel","arch":"x86_64"}]') || '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -42,7 +44,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build release binary
-        run: swift build --configuration release --product MauQuota
+        run: swift build --configuration release --arch ${{ matrix.arch }} --product MauQuota
 
       - name: Assemble and sign app bundle
         run: |
@@ -51,7 +53,8 @@ jobs:
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp Resources/Info.plist "$APP/Contents/Info.plist"
           cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-          cp .build/release/MauQuota "$APP/Contents/MacOS/MauQuota"
+          BIN_DIR="$(swift build --configuration release --arch ${{ matrix.arch }} --show-bin-path)"
+          cp "$BIN_DIR/MauQuota" "$APP/Contents/MacOS/MauQuota"
           chmod 755 "$APP/Contents/MacOS/MauQuota"
           codesign --force --sign - --timestamp=none "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
@@ -59,12 +62,12 @@ jobs:
       - name: Verify binary architecture
         run: |
           set -euo pipefail
-          HOST_ARCH="$(uname -m)"
+          EXPECTED_ARCH="${{ matrix.arch }}"
           BINARY="$RUNNER_TEMP/MauQuota.app/Contents/MacOS/MauQuota"
           BINARY_ARCHS="$(lipo -archs "$BINARY")"
           case " $BINARY_ARCHS " in
-            *" $HOST_ARCH "*) ;;
-            *) echo "Architecture mismatch: host=$HOST_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
+            *" $EXPECTED_ARCH "*) ;;
+            *) echo "Architecture mismatch: expected=$EXPECTED_ARCH binary=$BINARY_ARCHS path=$BINARY" >&2; exit 1 ;;
           esac
 
       - name: Create DMG
@@ -74,7 +77,7 @@ jobs:
           if [[ "$GITHUB_REF" == "refs/heads/preview/memory-stability-v2.0.1" ]]; then
             VERSION="${VERSION}-preview.${GITHUB_RUN_NUMBER}"
           fi
-          ARCH="$(uname -m)"
+          ARCH="${{ matrix.arch }}"
           STAGING="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGING" dist
           ditto "$RUNNER_TEMP/MauQuota.app" "$STAGING/MauQuota.app"
