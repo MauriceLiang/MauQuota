@@ -102,7 +102,7 @@ public enum MenuLocalization {
         case .simplifiedChinese: return "简体中文"
         case .english: return "English"
         case .copyDiagnostics: return chinese ? "复制诊断信息" : "Copy diagnostic information"
-        case .version: return chinese ? "MauQuota v2.0.1 预览 · 原生 OAuth" : "MauQuota v2.0.1 Preview · Native OAuth"
+        case .version: return chinese ? "MauQuota v2.0.1 · 原生 OAuth" : "MauQuota v2.0.1 · Native OAuth"
         case .quit: return chinese ? "退出 MauQuota" : "Quit MauQuota"
         case .customIntervalTitle: return chinese ? "自定义刷新间隔" : "Custom refresh interval"
         case .customIntervalMessage: return chinese ? "请输入 1–120 之间的整数分钟。新间隔会立即重新计时，不会立即发送请求。" : "Enter a whole number of minutes from 1 to 120. The next interval starts now; no immediate request is made."
