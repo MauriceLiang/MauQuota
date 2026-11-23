@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/menu-bar-ring-only]
     tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
@@ -79,7 +79,11 @@ jobs:
           mkdir -p "$STAGING" dist
           ditto "$RUNNER_TEMP/MauQuota.app" "$STAGING/MauQuota.app"
           ln -s /Applications "$STAGING/Applications"
-          DMG="dist/MauQuota-${VERSION}-macos-${ARCH}.dmg"
+          DIST_VERSION="$VERSION"
+          if [[ "$GITHUB_REF" == "refs/heads/feature/menu-bar-ring-only" ]]; then
+            DIST_VERSION="$VERSION-preview.1"
+          fi
+          DMG="dist/MauQuota-${DIST_VERSION}-macos-${ARCH}.dmg"
           hdiutil create -quiet -volname "MauQuota ${VERSION}" \
             -srcfolder "$STAGING" -format UDZO -imagekey zlib-level=9 -ov "$DMG"
           hdiutil verify "$DMG"
@@ -94,7 +98,7 @@ jobs:
 
   release:
     name: Release
-    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1'))
+    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1')) || (github.ref == 'refs/heads/feature/menu-bar-ring-only' && contains(github.event.head_commit.message, '[publish-preview]'))
     needs: build
     runs-on: macos-15-intel
     timeout-minutes: 15
@@ -109,12 +113,15 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/feature/menu-bar-ring-only" ]]; then
+            RELEASE_TAG="v$VERSION-preview.1"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else
             RELEASE_TAG="v$VERSION"
           fi
           TAG_VERSION="${RELEASE_TAG#v}"
+          TAG_VERSION="${TAG_VERSION%%-preview.*}"
           if [ "$VERSION" != "$TAG_VERSION" ]; then
             echo "Release tag $RELEASE_TAG does not match Info.plist version $VERSION" >&2
             exit 1
@@ -131,8 +138,12 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          test -s "artifacts/MauQuota-${VERSION}-macos-arm64.dmg"
-          test -s "artifacts/MauQuota-${VERSION}-macos-x86_64.dmg"
+          DIST_VERSION="$VERSION"
+          if [[ "$GITHUB_REF" == "refs/heads/feature/menu-bar-ring-only" ]]; then
+            DIST_VERSION="$VERSION-preview.1"
+          fi
+          test -s "artifacts/MauQuota-${DIST_VERSION}-macos-arm64.dmg"
+          test -s "artifacts/MauQuota-${DIST_VERSION}-macos-x86_64.dmg"
 
       - name: Create release
         env:
@@ -144,12 +155,16 @@ jobs:
             echo "Release $RELEASE_TAG already exists; skip duplicate creation."
           else
             NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
+            RELEASE_FLAGS=()
+            if [[ "$RELEASE_TAG" == *-preview.* ]]; then
+              RELEASE_FLAGS+=(--prerelease)
+            fi
             if [ -f "$NOTES_FILE" ]; then
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
+                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" "${RELEASE_FLAGS[@]}" --notes-file "$NOTES_FILE"
             else
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --generate-notes
+                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" "${RELEASE_FLAGS[@]}" --generate-notes
             fi
           fi
 
