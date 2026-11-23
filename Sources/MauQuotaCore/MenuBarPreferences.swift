@@ -61,7 +61,7 @@ public enum MenuLocalization {
         case authorizeInBrowser, checkingStatus, account, loggedOutDescription
         case remaining, resetAt, notProvided, updatedAt, error
         case login, relogin, refresh, refreshing
-        case ringToggle, numberColorToggle, numberColorEnabled, redNumberAlignmentCompensation
+        case numbersVisibilityToggle, ringToggle, numberColorToggle, numberColorEnabled, redNumberAlignmentCompensation
         case refreshInterval, customInterval, language
         case followSystem, simplifiedChinese, english, copyDiagnostics, version, quit
         case customIntervalTitle, customIntervalMessage, save, cancel
@@ -91,6 +91,7 @@ public enum MenuLocalization {
         case .relogin: return chinese ? "重新登录 ChatGPT…" : "Sign in to ChatGPT again…"
         case .refresh: return chinese ? "立即刷新" : "Refresh now"
         case .refreshing: return chinese ? "正在检查…" : "Refreshing…"
+        case .numbersVisibilityToggle: return chinese ? "显示菜单栏额度数字" : "Show menu bar quota numbers"
         case .ringToggle: return chinese ? "显示彩色额度圆环" : "Show colored quota rings"
         case .numberColorToggle: return chinese ? "显示彩色额度数字" : "Show colored quota numbers"
         case .numberColorEnabled: return chinese ? "启用彩色额度数字" : "Enable colored quota numbers"
@@ -102,7 +103,7 @@ public enum MenuLocalization {
         case .simplifiedChinese: return "简体中文"
         case .english: return "English"
         case .copyDiagnostics: return chinese ? "复制诊断信息" : "Copy diagnostic information"
-        case .version: return chinese ? "MauQuota v2.0.1 · 原生 OAuth" : "MauQuota v2.0.1 · Native OAuth"
+        case .version: return chinese ? "MauQuota v2.1 · 原生 OAuth" : "MauQuota v2.1 · Native OAuth"
         case .quit: return chinese ? "退出 MauQuota" : "Quit MauQuota"
         case .customIntervalTitle: return chinese ? "自定义刷新间隔" : "Custom refresh interval"
         case .customIntervalMessage: return chinese ? "请输入 1–120 之间的整数分钟。新间隔会立即重新计时，不会立即发送请求。" : "Enter a whole number of minutes from 1 to 120. The next interval starts now; no immediate request is made."

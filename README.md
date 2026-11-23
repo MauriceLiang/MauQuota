@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 2.0.1" src="https://img.shields.io/badge/version-2.0.1-black">
+  <img alt="Version 2.1" src="https://img.shields.io/badge/version-2.1-black">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -27,6 +27,7 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 - **直接额度查询** —— 使用 ChatGPT 后端接口获取 5 小时和每周额度，不启动外部进程。
 - **自动刷新 Token** —— Access Token 即将过期或服务端返回 401 时，使用 Refresh Token 更新凭据并重试一次。
 - **双环额度指示** —— 外环代表每周剩余额度，内环代表 5 小时剩余额度；每个环根据自身剩余比例变色，百分比也可显示对应颜色。圆环显示和数字着色可分别开关。
+- **紧凑菜单栏模式** —— 可关闭「显示菜单栏额度数字」，仅显示双层圆环，减少菜单栏空间占用。点击圆环仍可查看完整额度和设置；首次安装默认保留原有数字显示。
 - **使用限额重置** —— 查看可用重置额度及到期时间，选择具体卡片并二次确认后使用；成功后自动刷新额度。历史页展示 MauQuota 本机发起的重置，并可跳转查看 ChatGPT 官方完整记录。
 - **按需刷新** —— 预设间隔与 1–120 分钟自定义刷新，睡眠唤醒后自动更新。
 - **隐私优先** —— 诊断信息不包含邮箱、密码、Access Token 或 Refresh Token。
@@ -47,6 +48,8 @@ MauQuota 常驻菜单栏，直接显示 Codex 的 **5 小时**与**每周**额�
 | 红色 | 剩余 0–20% |
 
 > 文字仅显示服务端返回且能确认的额度窗口。缺失或无法确认的窗口以灰色轨道表示未知，不会被解释为无限额；剩余为 0% 时显示淡红色轨道。
+
+如果希望节省菜单栏空间，可在菜单中关闭「显示菜单栏额度数字」，只保留双层圆环。紧凑模式会强制保留圆环入口（原有圆环开关暂不可用），恢复数字后原先的圆环设置仍会生效。此模式下登录中、未登录和错误状态也不占用额外文字宽度；悬停圆环可查看额度信息，点击后查看完整详情。
 
 ## 工作原理
 
@@ -113,6 +116,12 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 核心逻辑（直接额度响应解析、OAuth PKCE、Token 刷新、Keychain 凭据管理和重置请求映射）均有单元测试覆盖。网络测试使用本地 URLProtocol Stub，不会消耗真实额度或重置卡。
 
 ## 版本记录
+
+**v2.1**
+
+- 新增「显示菜单栏额度数字」开关，关闭时菜单栏只保留双层额度圆环，显著降低空间占用。
+- 紧凑模式下隐藏全部菜单栏文字，包括登录、刷新与错误状态，点击圆环仍可查看完整菜单和额度。
+- 支持即时切换并持久保存设置；原有圆环与彩色数字选项保持兼容。
 
 **v2.0.1**
 

@@ -18,6 +18,29 @@ final class MenuBarAppearanceSettingsTests: XCTestCase {
         XCTAssertTrue(MenuBarAppearanceSettings(defaults: suite).showsColoredRing)
     }
 
+    func testMenuBarNumbersAreShownByDefault() throws {
+        let (settings, suite) = try makeSettings()
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        XCTAssertTrue(settings.showsMenuBarNumbers)
+        XCTAssertTrue(settings.shouldDisplayRing)
+    }
+
+    func testCompactModePersistsAndAlwaysDisplaysRing() throws {
+        let (settings, suite) = try makeSettings()
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        settings.showsColoredRing = false
+        XCTAssertFalse(settings.shouldDisplayRing)
+
+        settings.showsMenuBarNumbers = false
+        let reloaded = MenuBarAppearanceSettings(defaults: suite)
+        XCTAssertFalse(reloaded.showsMenuBarNumbers)
+        XCTAssertTrue(reloaded.shouldDisplayRing)
+
+        reloaded.showsMenuBarNumbers = true
+        XCTAssertFalse(settings.shouldDisplayRing)
+        XCTAssertFalse(settings.showsColoredRing)
+    }
+
     private var suiteName: String { "dev.mau.mauquota.test.\(testName)" }
     private var testName: String { name.replacingOccurrences(of: " ", with: "_") }
 
