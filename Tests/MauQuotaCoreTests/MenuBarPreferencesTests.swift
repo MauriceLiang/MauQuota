@@ -55,6 +55,8 @@ final class MenuBarPreferencesTests: XCTestCase {
         XCTAssertEqual(MenuLocalization.text(.refresh, language: .simplifiedChinese), "立即刷新")
         XCTAssertEqual(MenuLocalization.text(.refresh, language: .english), "Refresh now")
         XCTAssertEqual(MenuLocalization.text(.ringToggle, language: .english), "Show colored quota rings")
+        XCTAssertEqual(MenuLocalization.text(.numbersVisibilityToggle, language: .simplifiedChinese), "显示菜单栏额度数字")
+        XCTAssertEqual(MenuLocalization.text(.numbersVisibilityToggle, language: .english), "Show menu bar quota numbers")
         XCTAssertEqual(MenuLocalization.text(.refreshInterval, language: .simplifiedChinese), "自动刷新间隔")
     }
 
