@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main, feature/menu-bar-ring-only]
+    branches: [main]
     tags: ["v*", "!*-preview.*"]
   pull_request:
   workflow_dispatch:
@@ -79,11 +79,7 @@ jobs:
           mkdir -p "$STAGING" dist
           ditto "$RUNNER_TEMP/MauQuota.app" "$STAGING/MauQuota.app"
           ln -s /Applications "$STAGING/Applications"
-          DIST_VERSION="$VERSION"
-          if [[ "$GITHUB_REF" == "refs/heads/feature/menu-bar-ring-only" ]]; then
-            DIST_VERSION="$VERSION-preview.1"
-          fi
-          DMG="dist/MauQuota-${DIST_VERSION}-macos-${ARCH}.dmg"
+          DMG="dist/MauQuota-${VERSION}-macos-${ARCH}.dmg"
           hdiutil create -quiet -volname "MauQuota ${VERSION}" \
             -srcfolder "$STAGING" -format UDZO -imagekey zlib-level=9 -ov "$DMG"
           hdiutil verify "$DMG"
@@ -98,7 +94,7 @@ jobs:
 
   release:
     name: Release
-    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1')) || (github.ref == 'refs/heads/feature/menu-bar-ring-only' && contains(github.event.head_commit.message, '[publish-preview]'))
+    if: (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-preview.')) || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-stable]'))
     needs: build
     runs-on: macos-15-intel
     timeout-minutes: 15
@@ -113,15 +109,12 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          if [[ "$GITHUB_REF" == "refs/heads/feature/menu-bar-ring-only" ]]; then
-            RELEASE_TAG="v$VERSION-preview.1"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
           else
             RELEASE_TAG="v$VERSION"
           fi
           TAG_VERSION="${RELEASE_TAG#v}"
-          TAG_VERSION="${TAG_VERSION%%-preview.*}"
           if [ "$VERSION" != "$TAG_VERSION" ]; then
             echo "Release tag $RELEASE_TAG does not match Info.plist version $VERSION" >&2
             exit 1
@@ -138,12 +131,8 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-          DIST_VERSION="$VERSION"
-          if [[ "$GITHUB_REF" == "refs/heads/feature/menu-bar-ring-only" ]]; then
-            DIST_VERSION="$VERSION-preview.1"
-          fi
-          test -s "artifacts/MauQuota-${DIST_VERSION}-macos-arm64.dmg"
-          test -s "artifacts/MauQuota-${DIST_VERSION}-macos-x86_64.dmg"
+          test -s "artifacts/MauQuota-${VERSION}-macos-arm64.dmg"
+          test -s "artifacts/MauQuota-${VERSION}-macos-x86_64.dmg"
 
       - name: Create release
         env:
@@ -155,21 +144,17 @@ jobs:
             echo "Release $RELEASE_TAG already exists; skip duplicate creation."
           else
             NOTES_FILE=".github/release-notes/${RELEASE_TAG}.md"
-            RELEASE_FLAGS=()
-            if [[ "$RELEASE_TAG" == *-preview.* ]]; then
-              RELEASE_FLAGS+=(--prerelease)
-            fi
             if [ -f "$NOTES_FILE" ]; then
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" "${RELEASE_FLAGS[@]}" --notes-file "$NOTES_FILE"
+                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --notes-file "$NOTES_FILE"
             else
               gh release create "$RELEASE_TAG" artifacts/*.dmg artifacts/SHA256SUMS \
-                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" "${RELEASE_FLAGS[@]}" --generate-notes
+                --target "$GITHUB_SHA" --title "MauQuota $RELEASE_TAG" --generate-notes
             fi
           fi
 
       - name: Verify stable Release and its installers before cleanup
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1')
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-stable]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -180,27 +165,20 @@ jobs:
             gh release view "v$VERSION" --json assets --jq '.assets[].name' | grep -Fxq "$file"
           done
 
-      - name: Delete superseded preview Release, tags and branch
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Publish MauQuota 2.0.1')
+      - name: Clean up verified 2.0.2 preview and feature branch
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-stable]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          PREVIEW_TAGS="$(gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true and (.tagName | contains("-preview."))) | .tagName')"
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            echo "Deleting preview release and tag: $tag"
-            gh release delete "$tag" --cleanup-tag --yes
-          done <<< "$PREVIEW_TAGS"
-
-          # Remove orphan preview tags even if their Release was previously deleted.
-          ORPHAN_REFS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[].ref | select(contains("-preview."))')"
-          while IFS= read -r ref; do
-            [ -n "$ref" ] || continue
-            echo "Deleting preview tag: $ref"
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/$ref"
-          done <<< "$ORPHAN_REFS"
-
-          echo "Deleting merged preview/memory-stability-v2.0.1 branch"
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/preview/memory-stability-v2.0.1"
-          echo "Stable Release and preview cleanup completed."
+          # Remove only this feature's preview, not unrelated preview releases.
+          if gh release view "v2.0.2-preview.1" >/dev/null 2>&1; then
+            gh release delete "v2.0.2-preview.1" --cleanup-tag --yes
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v2.0.2-preview.1" >/dev/null 2>&1; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/v2.0.2-preview.1"
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/feature/menu-bar-ring-only" >/dev/null 2>&1; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/feature/menu-bar-ring-only"
+          fi
+          echo "MauQuota v2.1 verified and superseded preview cleaned."
