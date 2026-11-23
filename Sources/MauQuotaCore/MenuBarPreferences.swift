@@ -61,7 +61,7 @@ public enum MenuLocalization {
         case authorizeInBrowser, checkingStatus, account, loggedOutDescription
         case remaining, resetAt, notProvided, updatedAt, error
         case login, relogin, refresh, refreshing
-        case ringToggle, numberColorToggle, numberColorEnabled, redNumberAlignmentCompensation
+        case numbersVisibilityToggle, ringToggle, numberColorToggle, numberColorEnabled, redNumberAlignmentCompensation
         case refreshInterval, customInterval, language
         case followSystem, simplifiedChinese, english, copyDiagnostics, version, quit
         case customIntervalTitle, customIntervalMessage, save, cancel
@@ -91,6 +91,7 @@ public enum MenuLocalization {
         case .relogin: return chinese ? "重新登录 ChatGPT…" : "Sign in to ChatGPT again…"
         case .refresh: return chinese ? "立即刷新" : "Refresh now"
         case .refreshing: return chinese ? "正在检查…" : "Refreshing…"
+        case .numbersVisibilityToggle: return chinese ? "显示菜单栏额度数字" : "Show menu bar quota numbers"
         case .ringToggle: return chinese ? "显示彩色额度圆环" : "Show colored quota rings"
         case .numberColorToggle: return chinese ? "显示彩色额度数字" : "Show colored quota numbers"
         case .numberColorEnabled: return chinese ? "启用彩色额度数字" : "Enable colored quota numbers"
