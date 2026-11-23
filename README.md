@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple&amp;logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&amp;logoColor=white">
-  <img alt="Version 2.0.1" src="https://img.shields.io/badge/version-2.0.1-black">
+  <img alt="Version 2.1" src="https://img.shields.io/badge/version-2.1-black">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt="Build & Release" src="https://github.com/MauriceLiang/MauQuota/actions/workflows/build-release.yml/badge.svg">
 </p>
@@ -116,6 +116,12 @@ MauQuota 使用 <code>URLSession</code> 的系统网络配置。Finder 启动的
 核心逻辑（直接额度响应解析、OAuth PKCE、Token 刷新、Keychain 凭据管理和重置请求映射）均有单元测试覆盖。网络测试使用本地 URLProtocol Stub，不会消耗真实额度或重置卡。
 
 ## 版本记录
+
+**v2.1**
+
+- 新增「显示菜单栏额度数字」开关，关闭时菜单栏只保留双层额度圆环，显著降低空间占用。
+- 紧凑模式下隐藏全部菜单栏文字，包括登录、刷新与错误状态，点击圆环仍可查看完整菜单和额度。
+- 支持即时切换并持久保存设置；原有圆环与彩色数字选项保持兼容。
 
 **v2.0.1**
 
