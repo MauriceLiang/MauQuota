@@ -23,7 +23,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         case progress, account, email, signedOut, usageSeparator
         case shortRemaining, shortReset, longRemaining, longReset, updatedAt
         case errorSeparator, error, login, refresh, reset
-        case coloredRing, numberColors, numbersEnabled, redAlignment
+        case numbersVisible, coloredRing, numberColors, numbersEnabled, redAlignment
         case intervalRoot, intervalCustom, languageRoot
         case diagnostics, version, quit
     }
@@ -124,7 +124,13 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         controller.present()
     }
 
+    @objc private func menuBarNumbersToggled(_ sender: Any?) {
+        appearanceSettings.showsMenuBarNumbers.toggle()
+        drawMenu() // UI-only change; keep existing quota data and refresh schedule.
+    }
+
     @objc private func coloredRingToggled(_ sender: Any?) {
+        guard appearanceSettings.showsMenuBarNumbers else { return }
         appearanceSettings.showsColoredRing.toggle()
         drawMenu() // UI-only change; no quota request.
     }
@@ -365,6 +371,7 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         addRow(.refresh, to: menu, action: #selector(refreshClicked(_:)), keyEquivalent: "r")
         addRow(.reset, to: menu, action: #selector(resetCreditsClicked(_:)))
         menu.addItem(.separator())
+        addRow(.numbersVisible, to: menu, action: #selector(menuBarNumbersToggled(_:)))
         addRow(.coloredRing, to: menu, action: #selector(coloredRingToggled(_:)))
 
         let numberMenu = NSMenu(title: tr(.numberColorToggle))
@@ -429,22 +436,26 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
         else { title = tr(.errorTitle) }
 
         let ringState = QuotaRingState(usage: lastUsage)
+        let showNumbers = appearanceSettings.showsMenuBarNumbers
+        let visibleTitle = showNumbers ? title : ""
         let coloredNumbers = appearanceSettings.showsColoredNumbers
         let redCompensation = appearanceSettings.compensatesRedNumberAlignment
-        let ringVisible = appearanceSettings.showsColoredRing
+        let ringVisible = appearanceSettings.shouldDisplayRing
         let ringChanged = displayedRingState != ringState
 
         // Avoid reallocating attributed strings and 21pt NSImage on unchanged quotas.
-        if displayedTitle != title || displayedColoredNumbers != coloredNumbers ||
+        // imageOnly also removes the text's reserved layout width in compact mode.
+        if displayedTitle != visibleTitle || displayedColoredNumbers != coloredNumbers ||
             displayedRedCompensation != redCompensation || ringChanged {
-            button.title = title
-            if let usage = lastUsage, coloredNumbers {
+            button.imagePosition = showNumbers ? .imageLeading : .imageOnly
+            button.title = visibleTitle
+            if showNumbers, let usage = lastUsage, coloredNumbers {
                 button.attributedTitle = Self.coloredTitle(
                     button.attributedTitle, usage: usage,
                     compensatesRedAlignment: redCompensation
                 )
             }
-            displayedTitle = title
+            displayedTitle = visibleTitle
             displayedColoredNumbers = coloredNumbers
             displayedRedCompensation = redCompensation
         }
@@ -453,8 +464,14 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             displayedRingVisible = ringVisible
         }
         displayedRingState = ringState
-        button.toolTip = !ringVisible ? tr(.tooltipHidden)
-            : (lastUsage == nil ? tr(.tooltipUnknown) : tr(.tooltipRings))
+        if !ringVisible {
+            button.toolTip = tr(.tooltipHidden)
+        } else if let usage = lastUsage {
+            button.toolTip = showNumbers ? tr(.tooltipRings)
+                : "\(usage.menuBarTitle)\n\(tr(.tooltipRings))"
+        } else {
+            button.toolTip = tr(.tooltipUnknown)
+        }
 
         setMenuText(.progress, isLoggingIn ? tr(.authorizeInBrowser)
             : (isFetching ? tr(.checkingStatus) : nil))
@@ -496,8 +513,11 @@ final class MauQuotaApp: NSObject, NSApplicationDelegate {
             ? "使用限额重置…" : "Usage limit resets…"
         menuRows[.reset]?.isEnabled = lastAccount?.isChatGPT == true && !isFetching && !isLoggingIn
 
+        menuRows[.numbersVisible]?.title = tr(.numbersVisibilityToggle)
+        menuRows[.numbersVisible]?.state = showNumbers ? .on : .off
         menuRows[.coloredRing]?.title = tr(.ringToggle)
         menuRows[.coloredRing]?.state = ringVisible ? .on : .off
+        menuRows[.coloredRing]?.isEnabled = showNumbers
         menuRows[.numberColors]?.title = tr(.numberColorToggle)
         menuRows[.numbersEnabled]?.title = tr(.numberColorEnabled)
         menuRows[.numbersEnabled]?.state = coloredNumbers ? .on : .off
